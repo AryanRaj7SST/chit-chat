@@ -1,8 +1,9 @@
 import axios from "axios";
+import { apiUrl } from "./config";
 
 const TOKEN_KEY = "chat_token";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
+const api = axios.create({ baseURL: apiUrl });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);

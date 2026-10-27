@@ -1,4 +1,5 @@
 import { Server } from "socket.io";
+import { getCorsOptions } from "../config/cors.js";
 import mongoose from "mongoose";
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
@@ -14,7 +15,7 @@ export function initSocket(httpServer) {
   // userId -> Set of socket ids (a user can have several tabs/devices)
   const onlineUsers = new Map();
   const io = new Server(httpServer, {
-    cors: { origin: process.env.CLIENT_URL, credentials: true },
+    cors: getCorsOptions(),
   });
 
   // Authenticate every socket with the same JWT used for REST

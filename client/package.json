@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "e2e": "node scripts/e2e-test.mjs",
-    "test": "node --test scripts/messages-test.mjs"
+    "test": "node --test scripts/messages-test.mjs scripts/environment-test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -38,6 +38,13 @@ $env:E2E_BASE_URL = 'http://localhost:5174'
 npm run e2e
 ```
 
+For a hosted backend, wake its `/api/health` endpoint first, then run
+`BASE_URL="<RENDER_URL>" npm run verify` from `server` (PowerShell:
+`$env:BASE_URL = '<RENDER_URL>'`, then `npm run verify`). The script does not
+require the production JWT secret: it explicitly skips the expired-token signing
+check if the local secret differs. It also verifies an explicit WebSocket
+connection. See [DEPLOYMENT.md](DEPLOYMENT.md) for deployment order and setup.
+
 Run the browser test against the development server to exercise React StrictMode.
 It uses two separate browser contexts with freshly registered users, plus an
 additional tab for one user. Playwright is a development dependency only.

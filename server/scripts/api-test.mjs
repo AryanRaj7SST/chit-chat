@@ -2,7 +2,10 @@ import "dotenv/config";
 import jwt from "jsonwebtoken";
 import { io } from "socket.io-client";
 
-const BASE = process.env.BASE_URL || "http://localhost:5000";
+const BASE = (process.env.BASE_URL || "http://localhost:5000").trim().replace(/\/+$/, "");
+const baseUrl = new URL(BASE);
+if (!["http:", "https:"].includes(baseUrl.protocol) || baseUrl.pathname !== "/" || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash)
+  throw new Error("BASE_URL must be the backend HTTP(S) origin, without /api or credentials");
 const API = `${BASE}/api`;
 const run = Date.now();
 let failed = 0;
@@ -23,9 +26,9 @@ const call = async (method, path, body, token) => {
   return { status: res.status, data: await res.json() };
 };
 
-const connect = (token) =>
+const connect = (token, options = {}) =>
   new Promise((resolve, reject) => {
-    const s = io(BASE, { auth: { token }, reconnection: false });
+    const s = io(BASE, { auth: { token }, reconnection: false, ...options });
     s.once("connect", () => resolve(s));
     s.once("connect_error", (error) => { s.disconnect(); reject(error); });
   });
@@ -75,14 +78,25 @@ async function main() {
   try { await connect("garbage"); } catch { badTokenRejected = true; }
   check("socket with bad token is rejected", badTokenRejected);
 
+  let canSignExpiredToken = false;
   if (process.env.JWT_SECRET) {
+    try {
+      jwt.verify(tokenA, process.env.JWT_SECRET);
+      canSignExpiredToken = true;
+    } catch { /* A local development secret may differ from the remote server. */ }
+  }
+  if (canSignExpiredToken) {
     const expiredToken = jwt.sign({ id: idA }, process.env.JWT_SECRET, { expiresIn: -1 });
     let expiredRejected = false;
     try { await connect(expiredToken); } catch { expiredRejected = true; }
     check("socket with expired token is rejected", expiredRejected);
   } else {
-    throw new Error("JWT_SECRET is required to verify expired socket tokens (load server/.env)");
+    console.log("SKIP - expired-token signing check (matching JWT_SECRET unavailable; production secret is not required)");
   }
+
+  const websocket = await connect(tokenA, { transports: ["websocket"] });
+  check("WebSocket transport connects with JWT", websocket.io.engine.transport.name === "websocket");
+  websocket.disconnect();
 
   const reconnectSocket = await connect(tokenA);
   reconnectSocket.disconnect();

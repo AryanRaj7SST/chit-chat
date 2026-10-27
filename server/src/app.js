@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { getCorsOptions } from "./config/cors.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import conversationRoutes from "./routes/conversationRoutes.js";
@@ -7,7 +8,7 @@ import { notFound, errorHandler } from "./middleware/error.js";
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(cors(getCorsOptions()));
 app.use(express.json({ limit: "100kb" }));
 
 app.get("/api/health", (req, res) => {
