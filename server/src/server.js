@@ -1,21 +1,18 @@
 import "dotenv/config";
 import http from "http";
-import { Server } from "socket.io";
 import app from "./app.js";
 import connectDB from "./config/db.js";
+import { initSocket } from "./socket/index.js";
 
 const PORT = process.env.PORT || 5000;
 
-const server = http.createServer(app);
-export const io = new Server(server, {
-  cors: { origin: process.env.CLIENT_URL, credentials: true },
-});
+if (!process.env.JWT_SECRET || !process.env.MONGO_URI) {
+  console.error("Missing JWT_SECRET or MONGO_URI in server/.env");
+  process.exit(1);
+}
 
-// Phase 2 replaces this with authenticated socket handlers
-io.on("connection", (socket) => {
-  console.log("socket connected:", socket.id);
-  socket.on("disconnect", () => console.log("socket disconnected:", socket.id));
-});
+const server = http.createServer(app);
+initSocket(server);
 
 connectDB()
   .then(() => server.listen(PORT, () => console.log(`Server on http://localhost:${PORT}`)))
