@@ -56,6 +56,7 @@ const register = async (page, name, label) => {
 const openChat = async (page, name) => {
   await page.locator("aside").getByRole("button").filter({ hasText: name }).click();
   await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
+  if (name !== "Buddy AI") await expect(page.getByLabel("Buddy quick replies")).toHaveCount(0);
 };
 const send = async (page, text) => {
   await page.getByPlaceholder("Type a message...").fill(text);
@@ -94,7 +95,7 @@ try {
   await expect(pageA.locator("section header").getByText("Online", { exact: true })).toBeVisible();
   holdSendAck = true;
   await send(pageA, "Hello from A");
-  const firstBubble = messages(pageA, "Hello from A").locator("..");
+  const firstBubble = messages(pageA, "Hello from A").locator("xpath=ancestor::*[@data-message-id]");
   await expect(firstBubble.getByLabel("Sending", { exact: true })).toBeVisible();
   await expect(pageB.getByLabel("1 unread messages", { exact: true })).toBeVisible();
   await expect(firstBubble.getByLabel("Sent", { exact: true })).toHaveCount(0);
@@ -110,7 +111,7 @@ try {
   await expect(pageB.getByLabel("1 unread messages", { exact: true })).toHaveCount(0);
   await send(pageA, "Live delivery");
   await expect(messages(pageB, "Live delivery")).toHaveCount(1);
-  await expect(messages(pageA, "Live delivery").locator("..").getByLabel("Read", { exact: true })).toBeVisible();
+  await expect(messages(pageA, "Live delivery").locator("xpath=ancestor::*[@data-message-id]").getByLabel("Read", { exact: true })).toBeVisible();
   check("opening and receiving in an open chat clear unread counts and update read receipts");
   check("A starts chat; B receives messages without refresh");
   await send(pageB, "Reply from B");
@@ -119,7 +120,7 @@ try {
   await openChat(pageA, nameB);
   for (const text of ["Hello from A", "Live delivery", "Reply from B"])
     await expect(messages(pageA, text)).toHaveCount(1);
-  await expect(messages(pageA, "Hello from A").locator("..").getByLabel("Read", { exact: true })).toBeVisible();
+  await expect(messages(pageA, "Hello from A").locator("xpath=ancestor::*[@data-message-id]").getByLabel("Read", { exact: true })).toBeVisible();
   check("reply and reload retain each saved message exactly once");
 
   await contextA.setOffline(true);
@@ -262,6 +263,42 @@ try {
   await expect(botMessages).toHaveCount(beforeBot + 2);
   await expect(pageA.locator("section header").getByText("Always online - automated replies", { exact: true })).toBeVisible();
   check("Buddy is pinned, replies in chat, and has no unfriend menu");
+  const chips = pageA.getByLabel("Buddy quick replies");
+  await expect(chips.getByRole("button")).toHaveCount(5);
+  const beforeTopics = await botMessages.count();
+  await chips.getByRole("button", { name: "topics", exact: true }).click();
+  await expect(botMessages).toHaveCount(beforeTopics + 2);
+  await expect(pageA.locator("section").getByText("I can explain these areas:", { exact: false })).toBeVisible();
+  await send(pageA, "binary search");
+  const code = pageA.locator("section pre code").last();
+  await expect(code).toContainText("function binarySearch");
+  await expect(pageA.locator("section").getByText("Time O(log n)", { exact: false })).toBeVisible();
+  await contextA.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await pageA.locator('[data-message-id]').filter({ hasText: "function binarySearch" }).getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(pageA.getByText("Copied", { exact: true })).toBeVisible();
+  expect(await pageA.evaluate(() => navigator.clipboard.readText())).toContain("function binarySearch");
+  // Exercise the denied-clipboard path without permissions or browser-specific dialogs.
+  await pageA.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error("denied"); }; });
+  await pageA.locator('[data-message-id]').filter({ hasText: "function binarySearch" }).getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(pageA.getByText("Could not copy. Select the code to copy it manually.", { exact: true })).toBeVisible();
+  for (const width of [320, 375, 768, 1280]) {
+    await pageA.setViewportSize({ width, height: 812 });
+    expect(await pageA.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(code).toBeVisible();
+  }
+  expect(await pageA.locator("section pre").last().evaluate(el => getComputedStyle(el).overflowX)).toBe("auto");
+  await send(pageA, '<img src=x onerror="window.__unsafe=true">');
+  await expect(pageA.locator("section").getByText('<img src=x onerror="window.__unsafe=true">', { exact: true })).toBeVisible();
+  expect(await pageA.evaluate(() => window.__unsafe)).toBeUndefined();
+  // Wait for the prior fallback before checking the next exchange's count.
+  await expect(botMessages).toHaveCount(beforeTopics + 6);
+  await chips.getByRole("button", { name: "quiz me", exact: true }).click();
+  await expect(pageA.locator("section").getByText("Think of an explanation", { exact: false })).toBeVisible();
+  await expect(botMessages).toHaveCount(beforeTopics + 8);
+  await send(pageA, "answer");
+  await expect(botMessages).toHaveCount(beforeTopics + 10);
+  expect(await botMessages.last().innerText()).not.toContain("Type quiz me");
+  check("Buddy chips, knowledge replies, quiz, escaped text, code copy success/failure and no page overflow at 320/375/768/1280px");
   expect(errors).toEqual([]);
   process.stdout.write("All browser checks passed\n");
 } catch (error) {

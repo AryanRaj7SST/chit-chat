@@ -46,7 +46,7 @@ export function initSocket(httpServer) {
     setTimeout(async () => {
       try {
         const reply = await Message.create({ conversation: conversationId, sender: botId,
-          content: getBuddyReply(content, { now: new Date(), variant: Math.floor(Math.random() * 3), jokeIndex: joke }) });
+          content: getBuddyReply(content, userId, { now: new Date(), variant: Math.floor(Math.random() * 3), jokeIndex: joke }) });
         const at = new Date();
         await Conversation.updateOne({ _id: conversationId }, { lastMessage: reply._id, $max: { [`lastReadAt.${botId}`]: at } });
         io.to(`user:${userId}`).emit("message:new", reply.toObject());

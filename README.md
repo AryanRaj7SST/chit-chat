@@ -11,7 +11,7 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 - Register/login with bcrypt-hashed passwords and a seven-day JWT; restore sessions after refresh.
 - Search by at least two characters of a name/email; non-friend emails are masked. Send, accept, decline, or cancel friend requests before starting a human chat.
 - Unfriend without deleting saved history; re-friending restores the same conversation. Old history remains membership-readable, but every human send/typing event requires a current friendship.
-- Buddy AI is pinned first and always appears online. Its welcome, greetings, help, time/date, eight rotating jokes, and kind replies use local rules, with no external AI API.
+- Buddy AI is pinned first and always appears online. Its local rules include greetings, time/date, eight rotating jokes, and 242 built-in learning entries covering DSA, JavaScript, React, web development, backend, and CS basics. Try topics, dsa, more, random, or quiz me. Code examples have Copy buttons; Buddy-only quick replies use the usual message send path. No external AI API is used.
 - Reuse the same conversation for a participant pair instead of creating duplicates.
 - Send live text messages up to 2,000 characters, with pending/failed states, acknowledgement, and retry identity to avoid saving a retry twice.
 - Persist messages/previews in MongoDB; load missed messages after reconnect and reconcile rows without duplicates.
@@ -292,12 +292,13 @@ Every script below is defined in that directory's `package.json`.
 | `server` | `npm run dev` | Watch-mode backend |
 | `server` | `npm start` | Backend without watch mode |
 | `server` | `npm test` | CORS/origin and Buddy rule tests; no database needed |
+| `server` | `npm run test:kb` | Knowledge counts, retrieval, commands, bounded sessions, and runnable snippets; no server needed |
 | `server` | `npm run verify` | API/socket integration tests against a running backend |
 | `server` | `npm run seed:demo` | Development-only demo accounts |
 | `client` | `npm run dev` | Vite development server |
 | `client` | `npm run build` | Validate URL settings and create dist/ |
 | `client` | `npm run preview` | Preview the built frontend |
-| `client` | `npm test` | Message, date/read state, and URL unit tests |
+| `client` | `npm test` | Message, date/read state, URL, and fenced-code parsing tests |
 | `client` | `npm run lint` | Oxlint; currently reports non-failing React context/effect warnings |
 | `client` | `npm run e2e` | Playwright with two fresh user contexts and an extra tab |
 

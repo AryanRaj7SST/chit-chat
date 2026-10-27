@@ -43,8 +43,8 @@ const waitFor = (socket, event, ms = 2000) =>
 const emitAck = (socket, event, payload) => socket.timeout(10000).emitWithAck(event, payload);
 
 async function main() {
-  const stretchedGreeting = getBuddyReply("hii", { variant: 0 });
-  check("Buddy recognizes hii instead of the generic fallback", /^hello|^hey|^hi!/i.test(stretchedGreeting) && stretchedGreeting !== getBuddyReply("unmatched words", { variant: 0 }));
+  const stretchedGreeting = getBuddyReply("hii", "api-direct", { variant: 0 });
+  check("Buddy recognizes hii instead of the generic fallback", /^hello|^hey|^hi!/i.test(stretchedGreeting) && stretchedGreeting !== getBuddyReply("unmatched words", "api-direct", { variant: 0 }));
   const reg = (label) =>
     call("POST", "/auth/register", { name: `Test ${label}`, email: `${label}${run}@test.com`, password: "secret123" });
 
@@ -301,18 +301,33 @@ async function main() {
   eventB.disconnect();
 
   const botMessage = waitFor(sockA, "message:new", 3000);
-  const botAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hello", tempId: "bot-hello" });
+  const botAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hii", tempId: "bot-hello" });
   const hello = await botMessage;
   check("Buddy replies after a successful ack", botAck.success && hello.sender === buddyId && !!hello.content);
+  check("Buddy greets hii over the socket", /^(Hello|Hey|Hi!)/.test(hello.content));
   const jokeMessage = waitFor(sockA, "message:new", 3000);
   await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "joke", tempId: "bot-joke" });
   check("Buddy joke differs from greeting", (await jokeMessage).content !== hello.content);
   const botHistory = await call("GET", `/conversations/${buddyConversation._id}/messages`, null, tokenA);
   check("welcome is created only once", botHistory.data.messages.filter((m) => m.sender === buddyId).length === 3);
-  const repeatedBotAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hello", tempId: "bot-hello" });
+  const repeatedBotAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hii", tempId: "bot-hello" });
   await sleep(1700);
   const repeatedBotHistory = await call("GET", `/conversations/${buddyConversation._id}/messages`, null, tokenA);
   check("retrying a bot send does not schedule a duplicate reply", repeatedBotAck.message._id === botAck.message._id && repeatedBotHistory.data.messages.length === botHistory.data.messages.length);
+
+  const askBuddy = async (content, suffix) => {
+    const response = waitFor(sockA, "message:new", 4000);
+    const ack = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content, tempId: `bot-kb-${suffix}` });
+    check(`Buddy acknowledges ${content}`, ack.success);
+    const reply = await response;
+    check(`Buddy is the sender for ${content}`, reply.sender === buddyId);
+    return reply.content;
+  };
+  check("Buddy explains binary search complexity", (await askBuddy("binary search", "search")).includes("O(log n)"));
+  check("Buddy dsa command returns concepts", /Big O.*Arrays[\s\S]*Type any concept name/.test(await askBuddy("dsa", "list")));
+  check("Buddy starts a quiz", /^What is .+\?/.test(await askBuddy("quiz me", "quiz")));
+  const revealed = await askBuddy("answer", "answer");
+  check("Buddy reveals the pending quiz answer", revealed.length > 20 && !revealed.startsWith("Type quiz me"));
 
   const limited = await reg("limited");
   for (let i = 0; i < 20; i++) await call("POST", "/friends/requests", { userId: idA }, limited.data.token);

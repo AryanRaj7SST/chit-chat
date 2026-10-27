@@ -226,3 +226,75 @@ the development client on port 5174:
 Hosted deployment, Safari/Firefox, real-device rendering, hour-long limiter
 rollover in real time, and an injected bot/database failure were not verified.
 Use the manual checks above for unreliable networks and cross-device behavior.
+
+## Buddy knowledge base (Phase 3.6)
+
+Run `npm run test:kb` from `server`; neither a running server nor database is
+needed. The six data files contain 242 original entries: DSA 75, JavaScript 40,
+React 25, web development 45, backend 35, and CS basics 22. Each entry includes
+a title for the topic browser, a unique ID, lowercase aliases, and an answer
+bounded to 900 characters. Optional follow-up text is bounded to 700 characters.
+No entries were removed because of uncertain accuracy; implementation assumptions
+are stated where they affect complexity or runtime behavior.
+
+The matcher precompiles escaped boundary patterns, checks raw and normalized
+text, scores phrases by word count, and uses main-term and longest-match
+tiebreaking. It is a deterministic keyword lookup, not a general reasoning model.
+Commands run before small talk and concept matching. `topics` lists the six areas;
+an area lists its first 20 titles. Any concept can still be requested directly.
+`more`, `example`, and `explain again` refer to the last concept; without authored
+follow-up text they repeat a short explanation line. `random`, `tip`,
+`random tip`, and `teach me something` avoid repeats until the entry set is
+exhausted. `quiz me` asks about a concept; `answer`, `show`, or `idk` reveals it.
+
+Each user's learning context is process-local, expires after 30 minutes without
+use, and is subject to a 1,000-user least-recently-used cap. A restart or eviction
+clears context, while already saved chat messages remain in MongoDB. Multiple
+backend instances do not share this learning context. No external AI request,
+extra dependency, REST route, or socket event was introduced.
+
+Observed local verification:
+
+- `npm run test:kb`: `Total: 242 entries. All knowledge-base checks passed`.
+  Checks include each file's quota, IDs/primary keywords, answer/follow-up bounds,
+  balanced fences, self-retrieval of every entry, 25 specific concept probes,
+  negative probes, and time/space notes in every DSA answer.
+- `PASS - executed 52 JavaScript snippets (37 DSA)`: snippets are run in Node VM
+  contexts with concrete expected results. These tests evaluate only repository
+  content, never user chat text. Debounce construction is checked without a
+  timing assertion; event-loop timing and browser-only API descriptions are not
+  executable algorithm examples.
+- Command tests cover isolated user state, random exhaustion/reset, quiz reveal,
+  expiry with an injected clock, and capacity eviction.
+- Running-backend `npm run verify`: `All checks passed`, including an actual
+  socket `hii` greeting, binary search containing `O(log n)`, a DSA concept list,
+  and quiz question/answer exchanges, alongside all earlier integration checks.
+- Client `npm test`: `tests 10`, `pass 10`, `fail 0`, including fenced-code parsing,
+  unfinished fences, literal HTML text, and multiple blocks.
+- `npm run e2e`: `All browser checks passed`. Chromium checks Buddy-only chips
+  through the normal ack/send path, a knowledge reply with code, successful copy,
+  denied copy feedback, literal HTML rendering, quiz/reveal, and no page overflow
+  at 320/375/768/1280px. Existing human messaging/read/presence/reconnect checks pass.
+- Client `npm run build`: `✓ built in 1.04s`. Lint exits
+  successfully with the previously documented React context/effect warnings.
+
+Manual checks still needed:
+
+- Review educational wording with a learner; the automated checks do not prove
+  every explanatory claim or every possible input to an example algorithm.
+- On deployed HTTPS, test Copy in Safari/Firefox and on a real phone, including
+  denied clipboard permission, keyboard focus, and horizontal scrolling inside
+  a long code block. Confirm the page itself stays within the viewport.
+- In Buddy, try topics, each area, more before/after a concept, random tip,
+  quiz me followed by show/idk, and an unknown question. Confirm human chats
+  have no learning chips and greetings/jokes still behave normally.
+- After a backend restart, confirm pending quiz/follow-up state has reset and
+  saved learning messages still load. Hosted endpoints and real-time 30-minute
+  expiry were not exercised here; the expiry test uses an injected clock.
+
+Selected runtime details were cross-checked against primary references:
+[MDN WeakMap](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap)
+documents supported weak keys;
+[React StrictMode](https://react.dev/reference/react/StrictMode) documents extra
+development checks; [Web Vitals](https://web.dev/articles/vitals) describes
+LCP/INP/CLS. The explanations in the knowledge files are original wording.

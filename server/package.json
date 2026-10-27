@@ -8,7 +8,8 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "verify": "node scripts/api-test.mjs"
+    "verify": "node scripts/api-test.mjs",
+    "test:kb": "node scripts/kb-test.mjs"
   },
   "keywords": [],
   "author": "",

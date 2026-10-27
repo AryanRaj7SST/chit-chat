@@ -248,6 +248,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
                 <MessageBubble
                   message={m}
                   mine={m.sender === me._id}
+                  isBot={other.isBot && m.sender !== me._id}
                   read={!!otherReadAt && new Date(otherReadAt) >= new Date(m.createdAt)}
                   onRetry={handleRetry}
                   groupedBefore={sameMessageGroup(messages[index - 1], m)}
@@ -273,6 +274,13 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
         <div ref={bottomRef} />
       </div>
 
+      {other.isBot && (
+        <div aria-label="Buddy quick replies" className="flex shrink-0 flex-wrap gap-2 border-t border-border bg-surface px-3 py-2 md:px-4">
+          {["topics", "dsa", "web dev", "quiz me", "random tip"].map(text => (
+            <button key={text} type="button" onClick={() => handleSend(text)} className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-medium text-primary-ink hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">{text}</button>
+          ))}
+        </div>
+      )}
       <MessageInput onSend={handleSend} onTyping={handleTyping} onStopTyping={stopTyping} />
     </section>
   );
