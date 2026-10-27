@@ -11,7 +11,7 @@ export const getUserFromToken = async (token) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"], audience: "mern-chat", issuer: "mern-chat-api" });
     if (typeof decoded.id !== "string" || !Number.isInteger(decoded.tokenVersion)) return null;
     const user = await User.findById(decoded.id).select("+tokenVersion");
-    return user && !user.isBot && user.tokenVersion === decoded.tokenVersion ? user : null;
+    return user && !user.isBot && !user.deleting && user.tokenVersion === decoded.tokenVersion ? user : null;
   } catch {
     return null;
   }

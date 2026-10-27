@@ -26,7 +26,7 @@ export default function MessageBubble({ message, mine, isBot, botChat, currentUs
       if (start && point.clientX - start.x > 65 && Math.abs(point.clientY - start.y) < 35 && !message.deletedAt && !message.status?.match(/sending|failed/)) onReply?.(message);
     }} className={`group relative flex ${groupedBefore ? "mt-1" : "mt-3"} ${message.type === "system" ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
       <div
-        className={`min-w-0 max-w-[80%] ${message.type === "image" ? "w-[420px]" : ""} rounded-2xl px-3.5 py-2 shadow-sm ${isBot ? "md:max-w-[75%]" : "md:max-w-[65%]"} ${
+        className={`message-bubble min-w-0 max-w-[80%] ${message.type === "image" ? "w-[420px]" : ""} rounded-2xl px-3.5 py-2 shadow-sm ${isBot ? "md:max-w-[75%]" : "md:max-w-[65%]"} ${
           message.type === "system" ? "border border-border bg-surface-2 text-muted" : mine
             ? "sent-bubble rounded-br-md text-on-primary"
             : "received-bubble rounded-bl-md border border-border bg-received text-text"

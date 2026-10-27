@@ -13,6 +13,7 @@ import { messageViews, notExpired } from "../utils/messageView.js";
 import { hardenSocket } from "../security/socketPolicy.js";
 import { canMessage, getFriendIds } from "../utils/friendship.js";
 import { ensureBuddy, getBuddyReply } from "../bot/buddy.js";
+import { canSeePresence, visibleRecipients } from "../utils/privacy.js";
 
 let currentIO = null;
 export const getIO = () => currentIO;
@@ -38,11 +39,23 @@ export function initSocket(httpServer) {
     // before publishing so an old lookup cannot leak presence after unfriend.
     for (;;) {
       const revision = io.friendshipRevision;
-      const ids = (await getFriendIds(userId)).map(String);
+      const ids = await visibleRecipients(userId, [...onlineUsers.keys()].filter(id => id !== String(userId)));
       if (revision !== io.friendshipRevision) continue;
-      publish(ids);
+      await publish(ids);
       return;
     }
+  };
+  io.visibleOnlineFor = async viewer => {
+    const users = await User.find({ _id: { $in: [...onlineUsers.keys()] } }).select("settings.presence isBot");
+    return (await Promise.all(users.map(async user => await canSeePresence(user, viewer) ? String(user._id) : null))).filter(Boolean);
+  };
+  io.refreshPrivacy = async id => {
+    const allowed = new Set(await visibleRecipients(id, [...onlineUsers.keys()]));
+    for (const viewer of onlineUsers.keys()) if (viewer !== id) io.to(`user:${viewer}`).emit("user:status", { userId: id, online: allowed.has(viewer) && onlineUsers.has(id), lastSeen: null });
+  };
+  io.clearUserTyping = async id => {
+    const conversations = await Conversation.find({ participants: id });
+    for (const conversation of conversations) io.to(conversation.participants.filter(p => String(p) !== id).map(p => `user:${p}`)).emit("typing:update", { conversationId: String(conversation._id), userId: id, isTyping: false });
   };
   const botPending = new Map();
   let jokeIndex = 0;
@@ -102,9 +115,9 @@ export function initSocket(httpServer) {
     sockets.add(socket.id);
     (async () => {
       const botId = String(await ensureBuddy());
-      await withCurrentFriends(userId, (ids) => {
+      await withCurrentFriends(userId, async (ids) => {
         if (!socket.connected) return;
-        socket.emit("presence:list", [...ids.filter((id) => onlineUsers.has(id)), botId]);
+        socket.emit("presence:list", [...await io.visibleOnlineFor(userId), botId]);
         if (!announcedOnline.has(userId) && onlineUsers.has(userId)) {
           announcedOnline.add(userId);
           if (ids.length) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: true });
@@ -238,6 +251,7 @@ export function initSocket(httpServer) {
       typingVersions.set(id, version);
       try {
         const conversation = await getConversationForUser(id, userId);
+        if (isTyping && (await User.findById(userId).select("settings.typingIndicators"))?.settings?.typingIndicators === false) return;
         // Database lookups can finish out of order. Relay only the newest
         // typing state for this socket/conversation, including rapid stop/start.
         if (!conversation || !socket.connected || typingVersions.get(id) !== version || socket.data.latestTyping.get(id) !== payload) return;
@@ -267,6 +281,7 @@ export function initSocket(httpServer) {
       if (set.size === 0) {
         onlineUsers.delete(userId);
         announcedOnline.delete(userId);
+        void io.clearUserTyping(userId).catch(() => {});
         const lastSeen = new Date();
         User.updateOne({ _id: userId }, { lastSeenAt: lastSeen }).then(() => withCurrentFriends(userId, (ids) => {
           if (ids.length && !onlineUsers.has(userId)) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: false, lastSeen: lastSeen.toISOString() });

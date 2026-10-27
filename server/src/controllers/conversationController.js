@@ -9,13 +9,16 @@ import { canMessage, getFriendIds, pairKey } from "../utils/friendship.js";
 import { messageViews, notExpired, visibleReadPositions } from "../utils/messageView.js";
 import { escapeRegex } from "../utils/validators.js";
 import ConversationSettings from "../models/ConversationSettings.js";
+import { privateProfile } from "../utils/privacy.js";
 
 const populateConversation = (query) =>
-  query.populate("participants", "name email isBot avatar about lastSeenAt").populate("lastMessage");
+  query.populate("participants", "name email isBot avatar about lastSeenAt settings.presence").populate("lastMessage");
 
 export const listConversations = asyncHandler(async (req, res) => {
   await ensureBuddyConversation(req.user._id);
   const allowed = [...await getFriendIds(req.user._id), await ensureBuddy()];
+  const deleted = await User.findOne({ email: "deleted@system.local" }).select("_id");
+  if (deleted) allowed.push(deleted._id);
   const conversations = await populateConversation(
     Conversation.find({ $and: [{ participants: req.user._id }, { participants: { $in: allowed } }] }).sort({ updatedAt: -1 })
   );
@@ -35,6 +38,7 @@ export const listConversations = asyncHandler(async (req, res) => {
   const preferences = await ConversationSettings.findOne({ user: req.user._id });
   res.json({ success: true, conversations: await Promise.all(conversations.map(async (conversation) => ({
     ...conversation.toObject({ flattenMaps: true }),
+    participants: await Promise.all(conversation.participants.map(user => privateProfile(user, req.user._id))),
     unreadCount: unreadCounts.get(String(conversation._id)) || 0,
     settings: preferences?.chats.find(chat => chat.conversationId.equals(conversation._id))?.toObject() || { pinned: false, muted: false, archived: false },
     lastReadAt: await visibleReadPositions(conversation, req.user._id),
@@ -63,9 +67,10 @@ export const getOrCreateConversation = asyncHandler(async (req, res) => {
     conversation = await Conversation.findOne({ participantsKey: key }); // lost a race, fetch winner
   }
 
-  await conversation.populate("participants", "name email isBot avatar about lastSeenAt");
+  await conversation.populate("participants", "name email isBot avatar about lastSeenAt settings.presence");
   await conversation.populate("lastMessage");
   const data = conversation.toObject({ flattenMaps: true });
+  data.participants = await Promise.all(conversation.participants.map(user => privateProfile(user, req.user._id)));
   data.lastReadAt = await visibleReadPositions(conversation, req.user._id);
   const latest = await Message.findOne({ conversation: conversation._id, hiddenFor: { $ne: req.user._id }, $and: [notExpired()] }).sort({ createdAt: -1, _id: -1 });
   data.lastMessage = latest ? (await messageViews([latest], req.user._id))[0] : null;

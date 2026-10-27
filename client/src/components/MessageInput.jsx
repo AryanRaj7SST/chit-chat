@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Paperclip, Send, Smile, X } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../hooks/useAuth";
 import { allowedImages } from "../services/media";
 import { characterCount, limitCharacters } from "../utils/characters";
 import CameraModal from "./CameraModal";
@@ -9,6 +10,7 @@ const EmojiPicker = lazy(() => import("emoji-picker-react"));
 const touchDevice = () => window.matchMedia("(pointer: coarse)").matches;
 
 export default function MessageInput({ onSend, onTyping, onStopTyping, images, reply, onCancelReply }) {
+  const { user } = useAuth();
   const [text, setText] = useState(""), [caption, setCaption] = useState("");
   const [emoji, setEmoji] = useState(false), [attach, setAttach] = useState(false), [camera, setCamera] = useState(false);
   const { resolvedTheme } = useTheme();
@@ -80,7 +82,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, images, r
       <input ref={fileInput} className="sr-only" tabIndex={-1} type="file" accept={allowedImages} multiple onChange={choose} aria-label="Photo files" />
       <input ref={nativeCamera} className="sr-only" tabIndex={-1} type="file" accept="image/*" capture="environment" onChange={choose} aria-label="Native camera photo" />
       <textarea ref={ref} rows={1} value={text} onSelect={rememberCursor} onChange={event => { const value = limitCharacters(event.target.value, 2000); setText(value); if (value.trim()) onTyping(); else onStopTyping(); }}
-        onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} placeholder="Type a message..." aria-label="Message" className="max-h-32 min-w-0 flex-1 resize-none rounded-2xl border-0 bg-transparent px-1 py-2.5 text-sm text-text outline-none focus-visible:outline-none" />
+        onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && (user.settings?.enterToSend !== false || event.ctrlKey)) { event.preventDefault(); submit(); } }} placeholder="Type a message..." aria-label="Message" className="max-h-32 min-w-0 flex-1 resize-none rounded-2xl border-0 bg-transparent px-1 py-2.5 text-sm text-text outline-none focus-visible:outline-none" />
       <button onClick={submit} disabled={images.preparing || (!text.trim() && !images.drafts.length)} aria-label="Send message" className="brand-gradient flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-on-primary shadow-sm disabled:cursor-not-allowed"><Send size={18} /></button>
     </div>
     {camera && <CameraModal onClose={closeCamera} onCapture={capture} />}

@@ -3,6 +3,7 @@ import api from "../services/api";
 import toast from "react-hot-toast";
 import { useAuth } from "../hooks/useAuth";
 import { createSocket } from "../services/socket";
+import { playTone } from "../utils/sounds";
 
 export const SocketContext = createContext({ socket: null, connected: false, onlineIds: new Set() });
 
@@ -26,14 +27,19 @@ export function SocketProvider({ children }) {
     const onMessage = async message => {
       if (message.sender === userId) return;
       if (!message.deliveredAt) s.timeout(10000).emit("message:delivered", { messageId: message._id }, () => {});
-      if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted" || notified.has(message._id) || message.deletedAt || (message.expireAt && new Date(message.expireAt) <= new Date())) return;
+      if (notified.has(message._id) || message.deletedAt || (message.expireAt && new Date(message.expireAt) <= new Date())) return;
       notified.add(message._id); if (notified.size > 1000) notified.delete(notified.values().next().value);
       try {
         const { data } = await api.get("/conversations");
         const conversation = data.conversations.find(item => item._id === message.conversation);
-        if (canceled || !s.connected || !document.hidden || !conversation || conversation.settings?.muted || (conversation.lastReadAt?.[userId] && new Date(conversation.lastReadAt[userId]) >= new Date(message.createdAt))) return;
-        const hide = userRef.current?.settings?.hidePreviews !== false;
-        new Notification("MERN Chat", { body: hide ? "You have a new message." : message.type === "image" ? "Photo" : message.content.slice(0, 120), tag: message.conversation });
+        if (canceled || !s.connected || !conversation || conversation.settings?.muted || (conversation.lastReadAt?.[userId] && new Date(conversation.lastReadAt[userId]) >= new Date(message.createdAt))) return;
+        if (userRef.current?.settings?.messageSound) {
+          void playTone(userRef.current?.settings?.soundTone || "bell");
+        }
+        if (userRef.current?.settings?.browserNotifications !== false && document.hidden && "Notification" in window && Notification.permission === "granted") {
+          const hide = userRef.current?.settings?.hidePreviews !== false;
+          new Notification("MERN Chat", { body: hide ? "You have a new message." : message.type === "image" ? "Photo" : message.content.slice(0, 120), tag: message.conversation });
+        }
       } catch { /* Unsupported/denied notifications never interrupt messaging. */ }
     };
     const onDisconnect = reason => {

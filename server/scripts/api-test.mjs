@@ -590,6 +590,100 @@ async function main() {
   check("password change revokes previous tokens", (await call("GET", "/auth/me", null, tokenC)).status === 401);
   check("updated password can log in", (await call("POST", "/auth/login", { email: `c${run}@test.com`, password: "Updated-Test-Password-42!" })).status === 200);
 
+  // Phase 5.9: settings, privacy, account tools
+  const loginC = await call("POST", "/auth/login", { email: `c${run}@test.com`, password: "Updated-Test-Password-42!" });
+  const activeTokenC = loginC.data.token;
+  const loginB = await call("POST", "/auth/login", { email: `b${run}@test.com`, password: "Test-Password-42!" });
+  const activeTokenB = loginB.data.token;
+  const loginA = await call("POST", "/auth/login", { email: `a${run}@test.com`, password: "Test-Password-42!" });
+  const activeTokenA = loginA.data.token;
+
+  // 1. Settings validation rejects unknown keys and bad values
+  const badSettings1 = await call("PATCH", "/users/me", { settings: { unknownKey: "unexpected" } }, activeTokenB);
+  check("settings validation rejects unknown keys", badSettings1.status === 400);
+
+  const badSettings2 = await call("PATCH", "/users/me", { settings: { theme: "neon-glow" } }, activeTokenB);
+  check("settings validation rejects invalid choice value", badSettings2.status === 400);
+
+  const badSettings3 = await call("PATCH", "/users/me", { settings: { readReceipts: "not-bool" } }, activeTokenB);
+  check("settings validation rejects invalid boolean value", badSettings3.status === 400);
+
+  const badSettings4 = await call("PATCH", "/users/me", { settings: "invalid-string" }, activeTokenB);
+  check("settings validation rejects non-object", badSettings4.status === 400);
+
+  const validSettings = await call("PATCH", "/users/me", { settings: { theme: "dark", accent: "teal", fontSize: "large", unknownKey: "dropped" } }, activeTokenB);
+  check("settings update saves whitelisted keys and drops unknown keys", validSettings.status === 200 && validSettings.data.user.settings?.theme === "dark" && validSettings.data.user.settings?.accent === "teal" && validSettings.data.user.settings?.fontSize === "large" && validSettings.data.user.settings?.unknownKey === undefined);
+
+  // 2. Last-seen visibility enforced for non-friends and "nobody"
+  const searchC = await call("GET", `/users?q=c${run}`, null, activeTokenB);
+  const targetUserC = searchC.data.users.find(u => u._id === rc.data.user._id);
+  check("last-seen is null for non-friends", targetUserC && targetUserC.lastSeenAt === null);
+
+  const reqBC = await call("POST", "/friends/requests", { userId: rc.data.user._id }, activeTokenB);
+  await call("POST", `/friends/requests/${reqBC.data.requestId}/accept`, {}, activeTokenC);
+  await call("PATCH", "/users/me", { settings: { presence: "nobody" } }, activeTokenC);
+  const friendsOfB = await call("GET", "/friends", null, activeTokenB);
+  const friendC = friendsOfB.data.friends.find(f => f._id === rc.data.user._id);
+  check("last-seen visibility is null when presence is nobody even for friends", friendC && friendC.lastSeenAt === null);
+
+  // 3. Export contains no other users' private data
+  const exportRes = await call("GET", "/users/me/export", null, activeTokenB);
+  check("export returns 200 with profile and messages", exportRes.status === 200 && exportRes.data.profile?._id === idB && Array.isArray(exportRes.data.messages));
+  check("export contains no other users' authored messages", exportRes.data.messages.every(m => m.conversation && (!m.sender || m.sender === idB)));
+  check("export attachments have url null and expired true", exportRes.data.messages.flatMap(m => m.attachments || []).every(a => a.url === null && a.expired === true));
+
+  // 4. Account deletion: requires password, removes user, messages, friendships, storage
+  const re = await reg("e");
+  const tokenE = re.data.token, idE = re.data.user._id;
+  const avatarUpload = await sign({ kind: "avatar-original", size: png.length, width: 1, height: 1 }, tokenE);
+  await put(avatarUpload.data, png, tokenE);
+  const avatarThumbUpload = await sign({ kind: "avatar-thumb", size: png.length, width: 1, height: 1 }, tokenE);
+  await put(avatarThumbUpload.data, png, tokenE);
+  await call("PATCH", "/users/me", { avatar: { key: avatarUpload.data.key, thumbKey: avatarThumbUpload.data.key } }, tokenE);
+  const reqEA = await call("POST", "/friends/requests", { userId: idA }, tokenE);
+  await call("POST", `/friends/requests/${reqEA.data.requestId}/accept`, {}, activeTokenA);
+  const convEA = await call("POST", "/conversations", { userId: idE }, activeTokenA);
+  const sockE = await connect(tokenE);
+  await emitAck(sockE, "message:send", { conversationId: convEA.data.conversation._id, content: "Message from E to delete", tempId: "e-msg-1" });
+  sockE.disconnect();
+
+  const badDelete = await call("DELETE", "/users/me", { password: "Wrong-Password-42!" }, tokenE);
+  check("account deletion requires correct password", badDelete.status === 400);
+
+  const goodDelete = await call("DELETE", "/users/me", { password: "Test-Password-42!" }, tokenE);
+  check("account deletion succeeds", goodDelete.status === 200);
+
+  const deletedLogin = await call("POST", "/auth/login", { email: `e${run}@test.com`, password: "Test-Password-42!" });
+  check("deleted user cannot log in", deletedLogin.status === 401);
+  const deletedMe = await call("GET", "/auth/me", null, tokenE);
+  check("deleted user token is rejected", deletedMe.status === 401);
+
+  const listA = await call("GET", "/conversations", null, activeTokenA);
+  const remainingConv = listA.data.conversations.find(c => c._id === convEA.data.conversation._id);
+  const deletedParticipant = remainingConv?.participants.find(p => p._id !== idA);
+  check("other user sees Deleted user in old conversation", remainingConv && deletedParticipant?.name === "Deleted user");
+
+  if (["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname)) {
+    const mongoose = (await import("mongoose")).default;
+    await mongoose.connect(process.env.MONGO_URI);
+    const db = mongoose.connection.db;
+    try {
+      const userDoc = await db.collection("users").findOne({ _id: new mongoose.Types.ObjectId(idE) });
+      const msgDocs = await db.collection("messages").find({ sender: new mongoose.Types.ObjectId(idE) }).toArray();
+      const uploadDocs = await db.collection("uploads").find({ user: idE }).toArray();
+      const friendDocs = await db.collection("friendships").find({ $or: [{ requester: new mongoose.Types.ObjectId(idE) }, { recipient: new mongoose.Types.ObjectId(idE) }] }).toArray();
+      check("account deletion cleans up user document", userDoc === null);
+      check("account deletion cleans up authored messages", msgDocs.length === 0);
+      check("account deletion cleans up upload records", uploadDocs.length === 0);
+      check("account deletion cleans up friendships", friendDocs.length === 0);
+      const { getStorage } = await import("../src/storage/index.js");
+      const avatarGone = await getStorage().head(avatarUpload.data.key);
+      check("account deletion removes storage objects", !avatarGone);
+    } finally {
+      await mongoose.disconnect();
+    }
+  }
+
   sockA.disconnect();
   sockC.disconnect();
 }

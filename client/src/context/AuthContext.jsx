@@ -1,13 +1,22 @@
 import { createContext, useCallback, useEffect, useState } from "react";
 import api, { TOKEN_KEY } from "../services/api";
 import { clearMediaCache } from "../services/media";
+import { applyPreferences } from "../utils/preferences";
+import { useTheme } from "../hooks/useTheme";
 
 export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const { setTheme } = useTheme();
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(() => !!localStorage.getItem(TOKEN_KEY));
+  useEffect(() => { if (user) { applyPreferences(user.settings); setTheme(user.settings?.theme || "system"); } }, [user, setTheme]);
+  useEffect(() => {
+    const refresh = () => { if (localStorage.getItem(TOKEN_KEY)) api.get("/auth/me").then(({ data }) => setUser(data.user)).catch(() => {}); };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
 
   const logout = useCallback(() => {
     clearMediaCache();

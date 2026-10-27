@@ -5,13 +5,12 @@ import { imageMime, parseAvatarKey } from "../storage/policy.js";
 import { cleanMessageContent, characterCount } from "../utils/validators.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import HttpError from "../utils/HttpError.js";
+import { validateSettings } from "../security/settings.js";
+import { getIO } from "../socket/index.js";
 
 export const updateProfile = asyncHandler(async (req, res) => {
   const patch = {}, id = String(req.user._id), storage = getStorage();
-  if (req.body?.settings?.removePhotoLocation !== undefined) {
-    if (typeof req.body.settings.removePhotoLocation !== "boolean") throw new HttpError(400, "Invalid photo privacy preference");
-    patch["settings.removePhotoLocation"] = req.body.settings.removePhotoLocation;
-  }
+  if (req.body?.settings !== undefined) Object.assign(patch, validateSettings(req.body.settings));
   if (req.body?.name !== undefined) {
     const name = cleanMessageContent(req.body.name);
     if (name.length < 2 || name.length > 50) throw new HttpError(400, "Name must be 2–50 characters");
@@ -37,8 +36,10 @@ export const updateProfile = asyncHandler(async (req, res) => {
       else patch.avatar.thumbKey = key;
     }
   }
-  if (!Object.keys(patch).length) throw new HttpError(400, "No profile fields supplied");
+  if (!Object.keys(patch).length) throw new HttpError(400, "No supported profile fields supplied");
   const user = await User.findByIdAndUpdate(id, { $set: patch }, { returnDocument: "after", runValidators: true });
+  if (patch["settings.presence"] !== undefined) await getIO()?.refreshPrivacy?.(id);
+  if (patch["settings.typingIndicators"] === false) await getIO()?.clearUserTyping?.(id);
   if (patch.avatar) {
     await Upload.updateMany({ user: id, key: { $in: [patch.avatar.key, patch.avatar.thumbKey] } }, { $set: { claim: id } });
     await Promise.allSettled([req.user.avatar?.key, req.user.avatar?.thumbKey].filter(key => key && ![patch.avatar.key, patch.avatar.thumbKey].includes(key)).map(key => storage.remove(key)));

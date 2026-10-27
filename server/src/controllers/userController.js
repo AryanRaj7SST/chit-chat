@@ -3,24 +3,25 @@ import asyncHandler from "../utils/asyncHandler.js";
 import { escapeRegex } from "../utils/validators.js";
 import Friendship from "../models/Friendship.js";
 import { getBlockedIds, pairKey } from "../utils/friendship.js";
+import { canSeePresence } from "../utils/privacy.js";
 
 export const searchUsers = asyncHandler(async (req, res) => {
   const q = String(req.query.q || "").trim().slice(0, 50);
   if (q.length < 2) return res.json({ success: true, users: [] });
   const rx = new RegExp(escapeRegex(q), "i");
-  const filter = { _id: { $ne: req.user._id, $nin: await getBlockedIds(req.user._id) }, isBot: { $ne: true }, $or: [{ name: rx }, { email: rx }] };
-  const users = await User.find(filter).select("name email createdAt").sort({ name: 1 }).limit(20);
+  const filter = { _id: { $ne: req.user._id, $nin: await getBlockedIds(req.user._id) }, deleting: { $ne: true }, isBot: { $ne: true }, $or: [{ name: rx }, { email: rx }] };
+  const users = await User.find(filter).select("name email createdAt lastSeenAt settings.presence").sort({ name: 1 }).limit(20);
   const relationships = await Friendship.find({ pairKey: { $in: users.map((user) => pairKey(req.user._id, user._id)) } });
   const byPair = new Map(relationships.map((record) => [record.pairKey, record]));
-  res.json({ success: true, users: users.map((user) => {
+  res.json({ success: true, users: await Promise.all(users.map(async (user) => {
     const record = byPair.get(pairKey(req.user._id, user._id));
     const relationship = !record ? "none" : record.status === "accepted" ? "friends"
       : record.requester.equals(req.user._id) ? "request_sent" : "request_received";
     const [local, domain] = user.email.split("@");
     const maskedEmail = `${local[0]}***@${domain[0]}***.${domain.split(".").at(-1)}`;
-    return { _id: user._id, name: user.name, maskedEmail, relationship,
+    return { _id: user._id, name: user.name, maskedEmail, relationship, lastSeenAt: await canSeePresence(user, req.user._id) ? user.lastSeenAt : null,
       ...(relationship === "friends" ? { email: user.email } : {}),
       ...(record?.status === "pending" ? { requestId: record._id } : {}),
     };
-  }) });
+  })) });
 });

@@ -5,6 +5,7 @@ import HttpError from "../utils/HttpError.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import { getFriendIds, isBlocked, pairKey } from "../utils/friendship.js";
 import { getIO } from "../socket/index.js";
+import { canSeePresence, privateProfile } from "../utils/privacy.js";
 
 const validateId = (id) => {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(400, "Invalid user or request id");
@@ -17,7 +18,7 @@ const publishAcceptance = async (record) => {
   io?.to(`user:${record.requester}`).emit("friend:accepted", { user: publicFriend(recipient) });
   io?.to(`user:${record.recipient}`).emit("friend:request:removed", { requestId: String(record._id) });
   for (const [source, target] of [[record.requester, record.recipient], [record.recipient, record.requester]]) {
-    if (io?.sockets.adapter.rooms.has(`user:${source}`))
+    if (io?.sockets.adapter.rooms.has(`user:${source}`) && await canSeePresence(String(source) === String(requester._id) ? requester : recipient, target))
       io.to(`user:${target}`).emit("user:status", { userId: String(source), online: true });
   }
   return { requester, recipient };
@@ -102,8 +103,8 @@ export const cancelRequest = removeRequest("requester");
 
 export const listFriends = asyncHandler(async (req, res) => {
   const ids = await getFriendIds(req.user._id);
-  const friends = await User.find({ _id: { $in: ids }, isBot: { $ne: true } }).select("name email avatar about lastSeenAt").sort({ name: 1 });
-  res.json({ success: true, friends });
+  const friends = await User.find({ _id: { $in: ids }, isBot: { $ne: true } }).select("name email avatar about lastSeenAt settings.presence").sort({ name: 1 });
+  res.json({ success: true, friends: await Promise.all(friends.map(user => privateProfile(user, req.user._id))) });
 });
 
 export const unfriend = asyncHandler(async (req, res) => {

@@ -7,6 +7,7 @@ import ThemeToggle from "./ThemeToggle";
 import api, { getErrorMessage } from "../services/api";
 import toast from "react-hot-toast";
 import ProfileModal from "./ProfileModal";
+import SettingsPanel from "./SettingsPanel";
 
 const actionClass = "rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-primary-ink transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted";
 
@@ -17,6 +18,7 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
   const [tab, setTab] = useState("chats");
   const [archived, setArchived] = useState(false), [blocked, setBlocked] = useState(null);
   const [profile, setProfile] = useState(false);
+  const [settings, setSettings] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(() => "Notification" in window ? Notification.permission : "unsupported");
   const searching = query.trim().length >= 2;
   const entries = conversations.map((conversation) => ({ user: getOther(conversation, me._id), conversation })).filter((entry) => entry.user);
@@ -91,6 +93,7 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
       <div className="flex items-center gap-3 border-t border-border p-3">
         <button aria-label="Edit profile" onClick={() => setProfile(true)}><Avatar name={me.name} avatar={me.avatar} /></button><div className="min-w-0 flex-1"><p className="truncate text-base font-semibold">{me.name}</p><p className="truncate text-xs text-muted">{me.email}</p></div>
         <ThemeToggle />
+        <button aria-label="Open settings" className="media-control text-xs" onClick={() => setSettings(true)}>Settings</button>
         <button onClick={onLogout} aria-label="Log out" className="rounded-lg p-2 text-muted hover:bg-surface-2"><LogOut className="h-4 w-4" /></button>
       </div>
       <button className="border-t border-border px-4 text-left text-xs text-muted" onClick={async () => { try { const { data } = await api.get("/users/blocked"); setBlocked(data.users); } catch (error) { toast.error(getErrorMessage(error)); } }}>Blocked people</button>
@@ -100,6 +103,7 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
       }}>{notificationPermission === "granted" ? "Notifications enabled" : notificationPermission === "unsupported" ? "Notifications unavailable" : "Enable notifications"}</button>
       {blocked && <div className="max-h-44 overflow-y-auto border-t border-border p-3 text-sm"><button className="media-control" onClick={() => setBlocked(null)}>Close blocked list</button>{blocked.length ? blocked.map(person => <div key={person._id} className="flex items-center justify-between gap-2"><span className="truncate">{person.name}</span><button className="media-control" onClick={async () => { try { await api.delete(`/users/${person._id}/block`); setBlocked(previous => previous?.filter(item => item._id !== person._id) || null); } catch (error) { toast.error(getErrorMessage(error)); } }}>Unblock</button></div>) : <p>No blocked people.</p>}</div>}
       {profile && <ProfileModal onClose={() => setProfile(false)} />}
+      {settings && <SettingsPanel onClose={() => setSettings(false)} onEditProfile={() => { setSettings(false); setProfile(true); }} />}
     </aside>
   );
 }

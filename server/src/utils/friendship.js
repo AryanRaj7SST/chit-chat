@@ -13,6 +13,6 @@ export const getFriendIds = async (userId) => {
 };
 export const canMessage = async (a, b) => {
   if (await isBlocked(a, b)) return false;
-  const other = await User.findById(b).select("isBot");
-  return !!other && (other.isBot || !!(await Friendship.exists({ pairKey: pairKey(a, b), status: "accepted" })));
+  const other = await User.findById(b).select("isBot deleting email");
+  return !!other && !other.deleting && other.email !== "deleted@system.local" && (other.isBot || !!(await Friendship.exists({ pairKey: pairKey(a, b), status: "accepted" })));
 };

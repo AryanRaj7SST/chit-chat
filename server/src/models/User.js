@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { characterCount } from "../utils/validators.js";
 import { decrypt, protectedString } from "../security/encryption.js";
 import { passwordError } from "../security/passwords.js";
+import { settingsSchema } from "../security/settings.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -11,7 +12,8 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 8, select: false },
     tokenVersion: { type: Number, default: 0, select: false },
     isBot: { type: Boolean, default: false },
-    settings: { readReceipts: { type: Boolean, default: true }, hidePreviews: { type: Boolean, default: true }, removePhotoLocation: { type: Boolean, default: true } },
+    settings: { type: settingsSchema, default: () => ({}) },
+    deleting: { type: Boolean, default: false },
     about: { ...protectedString, default: "", validate: value => characterCount(decrypt(value)) <= 140 },
     avatar: { key: String, thumbKey: String, mime: String, size: Number, width: Number, height: Number },
     lastSeenAt: { type: Date, default: null },

@@ -31,7 +31,7 @@ export const login = asyncHandler(async (req, res) => {
   const pass = typeof password === "string" ? password : "";
   const user = await User.findOne({ email: cleanEmail.slice(0, 254) }).select("+password +tokenVersion");
   const matches = await bcrypt.compare(pass.slice(0, 1000), user?.password || dummyHash);
-  if (!user || user.isBot || !matches || cleanEmail.length > 254 || Buffer.byteLength(pass) > 72) throw new HttpError(401, "Invalid email or password");
+  if (!user || user.isBot || user.deleting || !matches || cleanEmail.length > 254 || Buffer.byteLength(pass) > 72) throw new HttpError(401, "Invalid email or password");
   if (bcrypt.getRounds(user.password) < 12 && !passwordError(pass)) {
     // An opportunistic rehash must not overwrite a concurrent password change.
     const hash = await bcrypt.hash(pass, 12);

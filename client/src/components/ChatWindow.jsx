@@ -82,7 +82,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
         setOtherReadAt((previous) => latestReadAt(previous, at));
     };
     const onDelivery = ({ conversationId: id, messageId, at }) => { if (id === conversationId) { deliveryTimes.current.set(messageId, at); if (deliveryTimes.current.size > 1000) deliveryTimes.current.delete(deliveryTimes.current.keys().next().value); setMessages(previous => previous.map(message => message._id === messageId ? { ...message, deliveredAt: latestReadAt(message.deliveredAt, at) } : message)); } };
-    const onStatus = data => { if (data.userId === otherId && data.lastSeen) setLastSeen(data.lastSeen); };
+    const onStatus = data => { if (data.userId === otherId && Object.hasOwn(data, "lastSeen")) setLastSeen(data.lastSeen); };
     const onChange = message => {
       if (message.conversation !== conversationId) return;
       if (message.hidden || message.expired) { hiddenIds.current.add(message._id); setMessages(previous => previous.filter(item => item._id !== message._id).map(item => item.replyTo?._id === message._id ? { ...item, replyTo: { ...item.replyTo, preview: "Message unavailable" } } : item)); setResults(previous => previous.filter(item => item._id !== message._id)); setReply(previous => previous?._id === message._id ? null : previous); }
@@ -133,7 +133,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
   }, [socket, conversationId]);
 
   const handleTyping = () => {
-    if (!socket?.connected) return;
+    if (!socket?.connected || me.settings?.typingIndicators === false) return;
     isTypingRef.current = true;
     socket.emit("typing:start", { conversationId });
     clearTimeout(stopTimerRef.current);
