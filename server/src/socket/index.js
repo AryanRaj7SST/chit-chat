@@ -14,6 +14,7 @@ import { hardenSocket } from "../security/socketPolicy.js";
 import { canMessage, getFriendIds } from "../utils/friendship.js";
 import { ensureBuddy, getBuddyReply } from "../bot/buddy.js";
 import { canSeePresence, visibleRecipients } from "../utils/privacy.js";
+import { mediaDisabledError, mediaEnabled } from "../config/media.js";
 
 let currentIO = null;
 export const getIO = () => currentIO;
@@ -135,6 +136,7 @@ export function initSocket(httpServer) {
       const reply = typeof ack === "function" ? ack : () => {};
       try {
         const image = payload?.type === "image" || (Array.isArray(payload?.attachments) && payload.attachments.length > 0);
+        if (image && !mediaEnabled()) return reply({ success: false, message: mediaDisabledError().message });
         const content = image ? "" : cleanMessageContent(payload?.content);
         const caption = image ? cleanMessageContent(payload?.caption) : "";
         if (!image && !content) return reply({ success: false, message: "Message cannot be empty" });

@@ -7,7 +7,7 @@ import { characterCount, limitCharacters } from "../utils/characters";
 import { passwordError } from "../utils/passwords";
 
 export default function ProfileModal({ onClose }) {
-  const { user, updateProfile, logoutAll, changePassword } = useAuth();
+  const { user, mediaEnabled, updateProfile, logoutAll, changePassword } = useAuth();
   const [currentPassword, setCurrentPassword] = useState(""), [newPassword, setNewPassword] = useState("");
   const [removeLocation, setRemoveLocation] = useState(user.settings?.removePhotoLocation !== false);
   const [name, setName] = useState(user.name), [about, setAbout] = useState(user.about || ""), [photo, setPhoto] = useState(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0);
@@ -18,7 +18,7 @@ export default function ProfileModal({ onClose }) {
     event.preventDefault(); setBusy(true); setError(""); controller.current = new AbortController();
     try {
       let avatar;
-      if (photo) {
+      if (mediaEnabled && photo) {
         const file = await prepareImage(photo, { maxWidth: 512, maxHeight: 512, removeLocation });
         if (!file.thumb) throw new Error("Could not create an avatar thumbnail. Choose another supported photo.");
         const key = await uploadImage(file.file, file.mime, undefined, "avatar-original", { width: file.width, height: file.height }, controller.current.signal, setProgress);
@@ -34,8 +34,8 @@ export default function ProfileModal({ onClose }) {
     <h2 className="text-lg font-semibold">Your profile</h2>
     <label className="block text-sm">Name<input autoFocus aria-label="Profile name" value={name} onChange={event => setName(event.target.value)} maxLength={50} required minLength={2} className="mt-1 min-h-10 w-full rounded border border-border bg-input p-2" /></label>
     <label className="block text-sm">About<textarea aria-label="About" value={about} onChange={event => setAbout(limitCharacters(event.target.value, 140))} className="mt-1 w-full rounded border border-border bg-input p-2" /><span className="text-xs text-muted">{characterCount(about)}/140</span></label>
-    <label className="block text-sm">Avatar photo<input aria-label="Avatar photo" type="file" accept={allowedImages} onChange={event => setPhoto(event.target.files[0] || null)} className="mt-1 block w-full min-w-0 text-xs" /></label>
-    <p className="text-xs text-muted">Original kept privately. A thumbnail up to 512px is displayed.</p>
+    {mediaEnabled && <><label className="block text-sm">Avatar photo<input aria-label="Avatar photo" type="file" accept={allowedImages} onChange={event => setPhoto(event.target.files[0] || null)} className="mt-1 block w-full min-w-0 text-xs" /></label>
+    <p className="text-xs text-muted">Original kept privately. A thumbnail up to 512px is displayed.</p></>}
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={removeLocation} onChange={event => setRemoveLocation(event.target.checked)} />Remove location data from photos</label>
     <p className="text-xs text-muted">Removes JPEG EXIF without changing pixels. Other metadata may remain; some originals may display rotated.</p>
     {busy && photo && <p role="status">Uploading avatar: {progress}%</p>}{error && <p role="alert" className="text-sm text-danger-ink">{error}</p>}

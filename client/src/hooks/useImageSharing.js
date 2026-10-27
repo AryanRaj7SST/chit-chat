@@ -4,7 +4,7 @@ import { prepareImage, uploadImage } from "../services/media";
 import { getErrorMessage } from "../services/api";
 import { useAuth } from "./useAuth";
 
-export function useImageSharing({ conversationId, isBot, create, update, deliver, replyTo }) {
+export function useImageSharing({ conversationId, isBot, enabled = true, create, update, deliver, replyTo }) {
   const { user } = useAuth();
   const [drafts, setDrafts] = useState([]);
   const [error, setError] = useState("");
@@ -18,6 +18,7 @@ export function useImageSharing({ conversationId, isBot, create, update, deliver
     return () => { alive.current = false; for (const job of activeJobs.values()) job.controller?.abort(); activeJobs.clear(); for (const url of activeUrls) URL.revokeObjectURL(url); activeUrls.clear(); };
   }, [conversationId]);
   const addFiles = async files => {
+    if (!enabled) { setError("Photo sharing is turned off on this deployment"); return; }
     if (isBot) { setError("Buddy can't see images yet"); return; }
     if (preparing.current) return;
     preparing.current = true; setPreparingPreview(true); setError("");
@@ -69,6 +70,7 @@ export function useImageSharing({ conversationId, isBot, create, update, deliver
     }
   };
   const send = caption => {
+    if (!enabled) { setError("Photo sharing is turned off on this deployment"); return; }
     const files = [...currentDrafts.current]; if (!files.length) return;
     const id = `tmp-${crypto.randomUUID()}`;
     const job = { id, files, caption, replyTo, progress: files.map(() => 0) };

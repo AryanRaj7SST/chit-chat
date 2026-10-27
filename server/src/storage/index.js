@@ -25,6 +25,6 @@ export function getStorage() {
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
       bucket: process.env.S3_BUCKET,
     });
-  } else throw new Error("STORAGE_DRIVER must be local, r2, or s3");
+  } else throw new Error(`STORAGE_DRIVER must be one of: local, r2, s3 (received ${kind})`);
   return driver;
 }

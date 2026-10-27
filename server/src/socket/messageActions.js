@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import { canMessage } from "../utils/friendship.js";
 import { cleanMessageContent, characterCount } from "../utils/validators.js";
 import { getStorage } from "../storage/index.js";
+import { mediaEnabled } from "../config/media.js";
 import { messageViews, notExpired } from "../utils/messageView.js";
 import HttpError from "../utils/HttpError.js";
 
@@ -98,7 +99,7 @@ export function registerMessageActions(io, socket) {
     if (String(message.sender) !== userId) throw new HttpError(403, "Only the sender can delete for everyone");
     if (Date.now() - message.createdAt > 48 * 3600000) throw new HttpError(400, "Delete-for-everyone window has expired");
     // Remove bytes first. A failed storage operation leaves the document retryable.
-    for (const key of message.attachments.flatMap(a => [a.key, a.thumbKey].filter(Boolean))) {
+    if (mediaEnabled()) for (const key of message.attachments.flatMap(a => [a.key, a.thumbKey].filter(Boolean))) {
       if (!(await Message.exists({ _id: { $ne: message._id }, deletedAt: null, $and: [notExpired()], $or: [{ "attachments.key": key }, { "attachments.thumbKey": key }] }))) await getStorage().remove(key);
     }
     const updated = await Message.findOneAndUpdate({ _id: message._id, sender: userId, createdAt: { $gte: new Date(Date.now() - 48 * 3600000) } },

@@ -2,6 +2,7 @@ import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import { getStorage } from "../storage/index.js";
 import { canMessage } from "../utils/friendship.js";
+import { mediaEnabled } from "../config/media.js";
 
 let sweeping = false;
 export async function sweepExpired({ now = new Date(), io, onlyIds } = {}) {
@@ -13,7 +14,7 @@ export async function sweepExpired({ now = new Date(), io, onlyIds } = {}) {
     for (const message of records) {
       try {
         // Never let a storage error turn into an orphaned media object.
-        for (const key of message.attachments.flatMap(a => [a.key, a.thumbKey].filter(Boolean))) {
+        if (mediaEnabled()) for (const key of message.attachments.flatMap(a => [a.key, a.thumbKey].filter(Boolean))) {
           const shared = await Message.exists({ _id: { $ne: message._id }, deletedAt: null, $and: [{ $or: [{ expireAt: null }, { expireAt: { $gt: now } }] }], $or: [{ "attachments.key": key }, { "attachments.thumbKey": key }] });
           if (!shared) await getStorage().remove(key);
         }

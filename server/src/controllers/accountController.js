@@ -9,6 +9,7 @@ import ConversationSettings from "../models/ConversationSettings.js";
 import { getStorage } from "../storage/index.js";
 import { getIO } from "../socket/index.js";
 import { randomBytes } from "node:crypto";
+import { mediaEnabled } from "../config/media.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import HttpError from "../utils/HttpError.js";
 
@@ -30,11 +31,11 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   try {
     await User.updateOne({ _id: id }, { deleting: true });
     getIO()?.in(`user:${id}`).disconnectSockets(true);
-    const uploads = await Upload.find({ user: id });
+    const uploads = mediaEnabled() ? await Upload.find({ user: id }) : [];
     const messages = await Message.find({ sender: id }).select("attachments");
     const keys = new Set([user.avatar?.key, user.avatar?.thumbKey, ...uploads.map(upload => upload.key), ...messages.flatMap(message => message.attachments.flatMap(a => [a.key, a.thumbKey]))].filter(Boolean));
     // Fail before removing records if storage deletion fails; re-login to retry.
-    for (const key of keys) await getStorage().remove(key);
+    if (mediaEnabled()) for (const key of keys) await getStorage().remove(key);
     let removed = await User.findOne({ email: "deleted@system.local" });
     if (!removed) {
       try { removed = await User.create({ name: "Deleted user", email: "deleted@system.local", password: randomBytes(24).toString("hex"), deleting: true, settings: { presence: "nobody" } }); }

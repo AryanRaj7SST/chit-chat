@@ -13,6 +13,7 @@ import { useImageSharing } from "../hooks/useImageSharing";
 
 export default function ChatWindow({ conversation, me, onBack, onMessageSent, onUnfriend, busy }) {
   const { socket, connected, onlineIds } = useSocket();
+  const { mediaEnabled } = useAuth();
   const other = getOther(conversation, me._id);
   const conversationId = conversation._id;
   const otherId = other._id;
@@ -206,7 +207,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
     deliver(message.tempId, { ...(message.type === "image" ? { type: "image", attachments: message.attachments, caption: message.caption } : { content: message.content }), ...(message.replyTo ? { replyTo: message.replyTo._id || message.replyTo } : {}) });
   };
 
-  const imageSharing = useImageSharing({ conversationId, isBot: other.isBot,
+  const imageSharing = useImageSharing({ conversationId, isBot: other.isBot, enabled: mediaEnabled,
     create: (tempId, fields) => { stopTyping(); setMessages(previous => [...previous, { _id: tempId, tempId, conversation: conversationId, sender: me._id, createdAt: new Date().toISOString(), status: "sending", ...fields, ...(reply ? { replyTo: { _id: reply._id, preview: reply.type === "image" ? "Photo" : reply.content.slice(0,160) } } : {}) }]); setReply(null); },
     update: (tempId, fields) => setMessages(previous => previous.map(message => message.tempId === tempId ? { ...message, ...fields } : message)), deliver, replyTo: reply?._id });
 
@@ -287,7 +288,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
   }, [messages.length, otherTyping, loading]);
 
   return (
-    <section onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void imageSharing.addFiles([...event.dataTransfer.files]); } }} className="panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-border bg-surface md:rounded-2xl">
+    <section onDragOver={event => { if (mediaEnabled && event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => { if (mediaEnabled && event.dataTransfer.files.length) { event.preventDefault(); void imageSharing.addFiles([...event.dataTransfer.files]); } }} className="panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-border bg-surface md:rounded-2xl">
       <header className="flex items-center gap-3 border-b border-border bg-header px-3 py-4 md:px-5">
         <button
           onClick={onBack}

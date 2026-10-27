@@ -10,7 +10,7 @@ const EmojiPicker = lazy(() => import("emoji-picker-react"));
 const touchDevice = () => window.matchMedia("(pointer: coarse)").matches;
 
 export default function MessageInput({ onSend, onTyping, onStopTyping, images, reply, onCancelReply }) {
-  const { user } = useAuth();
+  const { user, mediaEnabled } = useAuth();
   const [text, setText] = useState(""), [caption, setCaption] = useState("");
   const [emoji, setEmoji] = useState(false), [attach, setAttach] = useState(false), [camera, setCamera] = useState(false);
   const { resolvedTheme } = useTheme();
@@ -48,12 +48,13 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, images, r
     setEmoji(false);
   };
   return <div className="composer relative min-w-0 shrink-0 border-t border-border bg-surface p-2 md:p-4" onPaste={event => {
+    if (!mediaEnabled) return;
     const files = [...(event.clipboardData?.items || [])].filter(item => item.kind === "file").map(item => item.getAsFile()).filter(Boolean);
     if (files.length) { event.preventDefault(); void images.addFiles(files); }
   }}>
     {images.error && <p role="alert" className="mb-2 text-sm text-danger-ink">{images.error}</p>}
     {reply && <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border-l-4 border-primary bg-surface-2 px-3 py-1 text-sm text-text"><span className="min-w-0 flex-1 truncate">Replying to: {reply.deletedAt ? "This message was deleted" : reply.type === "image" ? `Photo: ${reply.caption || ""}` : reply.content}</span><button type="button" className="media-control" aria-label="Cancel reply" onClick={onCancelReply}>×</button></div>}
-    {images.preparing && <p role="status" className="mb-2 text-sm text-muted">Preparing photo previews…</p>}
+    {mediaEnabled && images.preparing && <p role="status" className="mb-2 text-sm text-muted">Preparing photo previews…</p>}
     {images.drafts.length > 0 && <div className="mb-2 min-w-0 rounded-xl border border-border bg-surface-2 p-2">
       <p className="mb-1 text-xs font-medium text-text">Original pixel quality · {images.drafts.length}/10</p>
       {images.drafts.some(item => item.metadataWarning) && <p role="alert" className="text-xs text-danger-ink">Location metadata removal was skipped for a photo; it may still contain location data.</p>}
@@ -69,8 +70,8 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, images, r
     </div>}
     <div className="flex min-w-0 items-end gap-1 rounded-[26px] border border-border bg-input p-1.5 focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20">
       <div ref={picker} className="flex shrink-0">
-        <button type="button" aria-label="Attach photos" aria-expanded={attach} className="composer-button" onClick={() => { setAttach(value => !value); setEmoji(false); }}><Paperclip size={19} /></button>
-        {attach && <div className="absolute bottom-full left-2 z-20 mb-2 flex flex-col rounded-xl border border-border bg-surface p-2 shadow-lg">
+        {mediaEnabled && <button type="button" aria-label="Attach photos" aria-expanded={attach} className="composer-button" onClick={() => { setAttach(value => !value); setEmoji(false); }}><Paperclip size={19} /></button>}
+        {mediaEnabled && attach && <div className="absolute bottom-full left-2 z-20 mb-2 flex flex-col rounded-xl border border-border bg-surface p-2 shadow-lg">
           <button className="media-control" onClick={() => fileInput.current.click()}>Choose photos</button>
           <button className="media-control" onClick={() => { setAttach(false); if (touchDevice() || !navigator.mediaDevices?.getUserMedia) nativeCamera.current.click(); else setCamera(true); }}><Camera size={17} /> Camera</button>
         </div>}
@@ -79,8 +80,8 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, images, r
           <Suspense fallback={<p className="p-4 text-sm text-muted">Loading emojis…</p>}><EmojiPicker theme={resolvedTheme} emojiStyle="native" autoFocusSearch={!touchDevice()} lazyLoadEmojis width="100%" height={320} onEmojiClick={insertEmoji} previewConfig={{ showPreview: false }} /></Suspense>
         </div>}
       </div>
-      <input ref={fileInput} className="sr-only" tabIndex={-1} type="file" accept={allowedImages} multiple onChange={choose} aria-label="Photo files" />
-      <input ref={nativeCamera} className="sr-only" tabIndex={-1} type="file" accept="image/*" capture="environment" onChange={choose} aria-label="Native camera photo" />
+      {mediaEnabled && <><input ref={fileInput} className="sr-only" tabIndex={-1} type="file" accept={allowedImages} multiple onChange={choose} aria-label="Photo files" />
+      <input ref={nativeCamera} className="sr-only" tabIndex={-1} type="file" accept="image/*" capture="environment" onChange={choose} aria-label="Native camera photo" /></>}
       <textarea ref={ref} rows={1} value={text} onSelect={rememberCursor} onChange={event => { const value = limitCharacters(event.target.value, 2000); setText(value); if (value.trim()) onTyping(); else onStopTyping(); }}
         onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && (user.settings?.enterToSend !== false || event.ctrlKey)) { event.preventDefault(); submit(); } }} placeholder="Type a message..." aria-label="Message" className="max-h-32 min-w-0 flex-1 resize-none rounded-2xl border-0 bg-transparent px-1 py-2.5 text-sm text-text outline-none focus-visible:outline-none" />
       <button onClick={submit} disabled={images.preparing || (!text.trim() && !images.drafts.length)} aria-label="Send message" className="brand-gradient flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-on-primary shadow-sm disabled:cursor-not-allowed"><Send size={18} /></button>

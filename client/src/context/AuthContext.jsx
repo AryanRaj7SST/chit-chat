@@ -11,6 +11,8 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(() => !!localStorage.getItem(TOKEN_KEY));
+  const [mediaEnabled, setMediaEnabled] = useState(true);
+  useEffect(() => { api.get("/config").then(({ data }) => setMediaEnabled(data.mediaEnabled !== false)).catch(() => {}); }, []);
   useEffect(() => { if (user) { applyPreferences(user.settings); setTheme(user.settings?.theme || "system"); } }, [user, setTheme]);
   useEffect(() => {
     const refresh = () => { if (localStorage.getItem(TOKEN_KEY)) api.get("/auth/me").then(({ data }) => setUser(data.user)).catch(() => {}); };
@@ -62,7 +64,7 @@ export function AuthProvider({ children }) {
   const changePassword = async fields => { await api.post("/auth/change-password", fields); logout(); };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile, logoutAll, changePassword }}>
+    <AuthContext.Provider value={{ user, token, loading, mediaEnabled, login, register, logout, updateProfile, logoutAll, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

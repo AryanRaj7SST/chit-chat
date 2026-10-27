@@ -10,6 +10,7 @@ import HttpError from "../utils/HttpError.js";
 import { getStorage } from "../storage/index.js";
 import { local, verifyLocalToken } from "../storage/local.js";
 import { MAX_ORIGINAL, MAX_THUMB, MIME_EXT, imageMime, parseKey, parseAvatarKey } from "../storage/policy.js";
+import { mediaDisabledError, mediaEnabled } from "../config/media.js";
 
 const limits = new Map();
 export const validDimension = value => Number.isInteger(value) && value > 0 && value <= 100000;
@@ -23,6 +24,7 @@ export async function requireImageConversation(id, user) {
   return conversation;
 }
 export async function signUpload(req, res) {
+  if (!mediaEnabled()) throw mediaDisabledError();
   const now = Date.now();
   for (const [key, value] of limits) if (value.until <= now) limits.delete(key);
   const user = String(req.user._id);
@@ -42,6 +44,7 @@ export async function signUpload(req, res) {
   res.json({ key, upload });
 }
 export async function localPut(req, res) {
+  if (!mediaEnabled()) throw mediaDisabledError();
   if (getStorage() !== local) throw new HttpError(404, "Local uploads are disabled");
   let claims;
   try { claims = verifyLocalToken(req.params.token, "upload"); } catch { throw new HttpError(401, "Upload link expired or invalid"); }
@@ -54,6 +57,7 @@ export async function localPut(req, res) {
   res.status(201).end();
 }
 export async function localGet(req, res) {
+  if (!mediaEnabled()) throw mediaDisabledError();
   if (getStorage() !== local) throw new HttpError(404, "Local downloads are disabled");
   let claims;
   try { claims = verifyLocalToken(req.params.token, "download"); } catch { throw new HttpError(401, "Download link expired or invalid"); }
@@ -63,6 +67,7 @@ export async function localGet(req, res) {
   res.sendFile(local.path(claims.key));
 }
 export async function mediaUrl(req, res) {
+  if (!mediaEnabled()) throw mediaDisabledError();
   const key = req.query.key, parsed = parseKey(key);
   const avatar = parseAvatarKey(key);
   if (avatar) {
@@ -78,6 +83,7 @@ export async function mediaUrl(req, res) {
 }
 
 export async function validateAttachments(items, conversationId, userId) {
+  if (!mediaEnabled()) throw mediaDisabledError();
   if (!Array.isArray(items) || !items.length || items.length > 10) throw new HttpError(400, "Choose between one and ten images");
   const storage = getStorage(), seen = new Set();
   const check = async (key, kind) => {
