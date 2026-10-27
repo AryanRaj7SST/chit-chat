@@ -34,13 +34,13 @@ async function main() {
       throw new Error("An existing demo email has different account details. Use a separate demo database; no existing account was changed.");
     results.push({ ...details, action });
   }
-  console.log("Demo accounts ready (public demo credentials; development use only):");
+  process.stdout.write("Demo accounts ready (public demo credentials; development use only):\n");
   for (const user of results) {
-    console.log(`${user.action}: ${user.name}`);
-    console.log(`Email: ${user.email}`);
-    console.log(`Password: ${password}`);
+    process.stdout.write(`${user.action}: ${user.name}\n`);
+    process.stdout.write(`Email: ${user.email}\n`);
+    process.stdout.write(`Password: ${password}\n`);
   }
-  console.log("Existing conversations and messages were left unchanged.");
+  process.stdout.write("Existing conversations and messages were left unchanged.\n");
 }
 
 main().catch((error) => {

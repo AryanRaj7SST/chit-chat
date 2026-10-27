@@ -26,7 +26,7 @@ const pageB = await contextB.newPage();
 const errors = [];
 for (const page of [pageA, pageB]) page.on("pageerror", (error) => errors.push(error.message));
 const expect = playwrightExpect.configure({ timeout: 10000 });
-const check = (label) => console.log(`PASS - ${label}`);
+const check = (label) => process.stdout.write(`PASS - ${label}\n`);
 const messages = (page, text) => page.locator("section").getByText(text, { exact: true });
 const register = async (page, name, label) => {
   let release;
@@ -218,7 +218,7 @@ try {
   expect(await pageA.getByRole("button", { name: "Log out" }).evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
   check("sidebar errors retry successfully and keyboard navigation has a visible focus outline");
   expect(errors).toEqual([]);
-  console.log("All browser checks passed");
+  process.stdout.write("All browser checks passed\n");
 } catch (error) {
   // Do not dump pages, storage, requests, or JWTs on failure.
   console.error("FAIL -", error.message);

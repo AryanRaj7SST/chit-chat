@@ -11,7 +11,7 @@ const run = Date.now();
 let failed = 0;
 
 const check = (name, ok) => {
-  console.log(`${ok ? "PASS" : "FAIL"} - ${name}`);
+  process.stdout.write(`${ok ? "PASS" : "FAIL"} - ${name}\n`);
   if (!ok) failed++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -91,7 +91,7 @@ async function main() {
     try { await connect(expiredToken); } catch { expiredRejected = true; }
     check("socket with expired token is rejected", expiredRejected);
   } else {
-    console.log("SKIP - expired-token signing check (matching JWT_SECRET unavailable; production secret is not required)");
+    process.stdout.write("SKIP - expired-token signing check (matching JWT_SECRET unavailable; production secret is not required)\n");
   }
 
   const websocket = await connect(tokenA, { transports: ["websocket"] });
@@ -216,6 +216,6 @@ async function main() {
 main()
   .catch((err) => { console.error("Script error:", err.message); failed++; })
   .finally(() => {
-    console.log(failed ? `\n${failed} check(s) FAILED` : "\nAll checks passed");
+    process.stdout.write(failed ? `\n${failed} check(s) FAILED\n` : "\nAll checks passed\n");
     process.exit(failed ? 1 : 0);
   });
