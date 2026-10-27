@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 
-export default function MessageInput({ onSend, onTyping }) {
+export default function MessageInput({ onSend, onTyping, onStopTyping }) {
   const [text, setText] = useState("");
   const ref = useRef(null);
 
@@ -30,6 +30,7 @@ export default function MessageInput({ onSend, onTyping }) {
   const handleChange = (e) => {
     setText(e.target.value);
     if (e.target.value.trim()) onTyping();
+    else onStopTyping();
   };
 
   return (

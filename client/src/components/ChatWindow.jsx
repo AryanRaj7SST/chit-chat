@@ -4,13 +4,14 @@ import toast from "react-hot-toast";
 import api, { getErrorMessage } from "../services/api";
 import { useSocket } from "../hooks/useSocket";
 import { getOther } from "../utils/format";
+import { mergeMessages } from "../utils/messages";
 import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import { MessagesSkeleton } from "./Skeletons";
 
 export default function ChatWindow({ conversation, me, onBack, onMessageSent }) {
-  const { socket, onlineIds } = useSocket();
+  const { socket, connected, onlineIds } = useSocket();
   const other = getOther(conversation, me._id);
   const conversationId = conversation._id;
   const otherId = other._id;
@@ -26,25 +27,26 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent }) 
   const incomingTypingTimer = useRef(null);
   const isTypingRef = useRef(false);
   const stopTimerRef = useRef(null);
+  const historyRequest = useRef(0);
 
   // ---------- load history (also used after a reconnect) ----------
   const loadMessages = useCallback(async () => {
+    const request = ++historyRequest.current;
     try {
       const { data } = await api.get(`/conversations/${conversationId}/messages`, { params: { limit: 50 } });
-      setMessages((prev) => {
-        const pending = prev.filter((m) => m.status === "sending" || m.status === "failed");
-        return [...data.messages, ...pending];
-      });
+      if (request !== historyRequest.current) return;
+      setMessages((prev) => mergeMessages(prev, data.messages));
       setError("");
     } catch (err) {
-      setError(getErrorMessage(err));
+      if (request === historyRequest.current) setError(getErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (request === historyRequest.current) setLoading(false);
     }
   }, [conversationId]);
 
   useEffect(() => {
     loadMessages();
+    return () => { historyRequest.current++; };
   }, [loadMessages]);
 
   // ---------- socket listeners ----------
@@ -53,7 +55,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent }) 
 
     const onNew = (msg) => {
       if (msg.conversation !== conversationId) return;
-      setMessages((prev) => (prev.some((m) => m._id === msg._id) ? prev : [...prev, msg]));
+      setMessages((prev) => mergeMessages(prev, [msg]));
       if (msg.sender === otherId) setOtherTyping(false);
     };
 
@@ -83,24 +85,34 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent }) 
     clearTimeout(stopTimerRef.current);
     if (isTypingRef.current) {
       isTypingRef.current = false;
-      socket?.emit("typing:stop", { conversationId });
+      if (socket?.connected) socket.emit("typing:stop", { conversationId });
     }
   }, [socket, conversationId]);
 
   const handleTyping = () => {
-    if (!isTypingRef.current) {
-      isTypingRef.current = true;
-      socket?.emit("typing:start", { conversationId });
-    }
+    if (!socket?.connected) return;
+    isTypingRef.current = true;
+    socket.emit("typing:start", { conversationId });
     clearTimeout(stopTimerRef.current);
     stopTimerRef.current = setTimeout(stopTyping, 2000);
   };
 
   useEffect(() => stopTyping, [stopTyping]); // stop typing when leaving the conversation
 
+  useEffect(() => {
+    if (!connected) {
+      clearTimeout(stopTimerRef.current);
+      isTypingRef.current = false;
+    }
+    if (!connected || !isOnline) {
+      clearTimeout(incomingTypingTimer.current);
+      setOtherTyping(false);
+    }
+  }, [connected, isOnline]);
+
   // ---------- sending ----------
   const markFailed = (tempId) =>
-    setMessages((prev) => prev.map((m) => (m.tempId === tempId ? { ...m, status: "failed" } : m)));
+    setMessages((prev) => prev.map((m) => (m.tempId === tempId && m.status === "sending" ? { ...m, status: "failed" } : m)));
 
   const deliver = (tempId, content) => {
     if (!socket?.connected) {
@@ -116,7 +128,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent }) 
       }
       // the server confirmed it is saved: swap the temporary message for the real one
       setMessages((prev) =>
-        prev.map((m) => (m.tempId === tempId ? { ...res.message, tempId, status: "sent" } : m))
+        mergeMessages(prev, [{ ...res.message, tempId, status: "sent" }])
       );
       onMessageSent(res.message, conversation);
     });
@@ -220,7 +232,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent }) 
         <div ref={bottomRef} />
       </div>
 
-      <MessageInput onSend={handleSend} onTyping={handleTyping} />
+      <MessageInput onSend={handleSend} onTyping={handleTyping} onStopTyping={stopTyping} />
     </section>
   );
 }

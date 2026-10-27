@@ -17,7 +17,10 @@ export function SocketProvider({ children }) {
     const s = createSocket(token);
 
     const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
+    const onDisconnect = () => {
+      setConnected(false);
+      setOnlineIds(new Set());
+    };
     const onList = (ids) => setOnlineIds(new Set(ids));
     const onStatus = ({ userId: id, online }) =>
       setOnlineIds((prev) => {
@@ -27,7 +30,10 @@ export function SocketProvider({ children }) {
         return next;
       });
     const onError = (err) => {
-      if (err.message === "Authentication error") window.dispatchEvent(new Event("auth:logout"));
+      if (err.message === "Authentication error") {
+        s.disconnect();
+        window.dispatchEvent(new Event("auth:logout"));
+      }
     };
 
     s.on("connect", onConnect);
@@ -36,6 +42,7 @@ export function SocketProvider({ children }) {
     s.on("user:status", onStatus);
     s.on("connect_error", onError);
     setSocket(s);
+    s.connect();
 
     return () => {
       s.off("connect", onConnect);

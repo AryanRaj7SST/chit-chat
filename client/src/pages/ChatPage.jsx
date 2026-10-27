@@ -11,6 +11,7 @@ import api, { getErrorMessage } from "../services/api";
 const bump = (list, msg) => {
   const target = list.find((c) => c._id === msg.conversation);
   if (!target) return list;
+  if (target.lastMessage && new Date(target.lastMessage.createdAt) > new Date(msg.createdAt)) return list;
   return [{ ...target, lastMessage: msg, updatedAt: msg.createdAt }, ...list.filter((c) => c._id !== msg.conversation)];
 };
 
@@ -28,6 +29,7 @@ export default function ChatPage() {
 
   const conversationsRef = useRef([]);
   const activeIdRef = useRef(null);
+  const receivedIds = useRef(new Set());
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
@@ -77,6 +79,9 @@ export default function ChatPage() {
     if (!socket) return;
 
     const onNew = (msg) => {
+      if (receivedIds.current.has(msg._id)) return;
+      receivedIds.current.add(msg._id);
+      if (receivedIds.current.size > 1000) receivedIds.current.delete(receivedIds.current.values().next().value);
       const known = conversationsRef.current.some((c) => c._id === msg.conversation);
       if (known) setConversations((prev) => bump(prev, msg));
       else loadConversations();

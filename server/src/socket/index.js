@@ -5,15 +5,14 @@ import Message from "../models/Message.js";
 import { getUserFromToken } from "../utils/token.js";
 import { cleanMessageContent, MAX_MESSAGE_LENGTH } from "../utils/validators.js";
 
-// userId -> Set of socket ids (a user can have several tabs/devices)
-const onlineUsers = new Map();
-
 const getConversationForUser = (conversationId, userId) => {
   if (!mongoose.isValidObjectId(conversationId)) return null;
   return Conversation.findOne({ _id: conversationId, participants: userId }).select("participants");
 };
 
 export function initSocket(httpServer) {
+  // userId -> Set of socket ids (a user can have several tabs/devices)
+  const onlineUsers = new Map();
   const io = new Server(httpServer, {
     cors: { origin: process.env.CLIENT_URL, credentials: true },
   });
@@ -53,8 +52,29 @@ export function initSocket(httpServer) {
         if (!conversation) return reply({ success: false, message: "Conversation not found or access denied" });
 
         // sender comes from the authenticated socket, never from the client
-        const message = await Message.create({ conversation: conversation._id, sender: userId, content });
-        await Conversation.updateOne({ _id: conversation._id }, { lastMessage: message._id });
+        const tempId = typeof payload?.tempId === "string" ? payload.tempId : undefined;
+        if (tempId !== undefined && (!tempId || tempId.length > 100))
+          return reply({ success: false, message: "Invalid message tempId" });
+        const identity = { conversation: conversation._id, sender: userId, tempId };
+        let message;
+        if (tempId) {
+          try {
+            message = await Message.findOneAndUpdate(
+              identity, { $setOnInsert: { ...identity, content, createdAt: new Date() } },
+              { upsert: true, returnDocument: "after", runValidators: true, timestamps: false }
+            );
+          } catch (err) {
+            if (err.code !== 11000) throw err;
+            message = await Message.findOne(identity);
+          }
+        } else {
+          message = await Message.create({ conversation: conversation._id, sender: userId, content });
+        }
+        // An old retry must not move the preview back to an older message.
+        await Conversation.updateOne(
+          { _id: conversation._id, $or: [{ lastMessage: null }, { lastMessage: { $lt: message._id } }] },
+          { lastMessage: message._id }
+        );
 
         const data = message.toObject();
         const rooms = conversation.participants.map((p) => `user:${p}`);

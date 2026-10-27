@@ -1,3 +1,5 @@
+import "dotenv/config";
+import jwt from "jsonwebtoken";
 import { io } from "socket.io-client";
 
 const BASE = process.env.BASE_URL || "http://localhost:5000";
@@ -13,6 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const call = async (method, path, body, token) => {
   const res = await fetch(`${API}${path}`, {
+    signal: AbortSignal.timeout(10000),
     method,
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
@@ -23,8 +26,8 @@ const call = async (method, path, body, token) => {
 const connect = (token) =>
   new Promise((resolve, reject) => {
     const s = io(BASE, { auth: { token }, reconnection: false });
-    s.on("connect", () => resolve(s));
-    s.on("connect_error", reject);
+    s.once("connect", () => resolve(s));
+    s.once("connect_error", (error) => { s.disconnect(); reject(error); });
   });
 
 const waitFor = (socket, event, ms = 2000) =>
@@ -33,7 +36,7 @@ const waitFor = (socket, event, ms = 2000) =>
     socket.once(event, (d) => { clearTimeout(t); resolve(d); });
   });
 
-const emitAck = (socket, event, payload) => new Promise((res) => socket.emit(event, payload, res));
+const emitAck = (socket, event, payload) => socket.timeout(10000).emitWithAck(event, payload);
 
 async function main() {
   const reg = (label) =>
@@ -72,6 +75,23 @@ async function main() {
   try { await connect("garbage"); } catch { badTokenRejected = true; }
   check("socket with bad token is rejected", badTokenRejected);
 
+  if (process.env.JWT_SECRET) {
+    const expiredToken = jwt.sign({ id: idA }, process.env.JWT_SECRET, { expiresIn: -1 });
+    let expiredRejected = false;
+    try { await connect(expiredToken); } catch { expiredRejected = true; }
+    check("socket with expired token is rejected", expiredRejected);
+  } else {
+    throw new Error("JWT_SECRET is required to verify expired socket tokens (load server/.env)");
+  }
+
+  const reconnectSocket = await connect(tokenA);
+  reconnectSocket.disconnect();
+  reconnectSocket.auth = { token: "garbage" };
+  const rejectedReconnect = waitFor(reconnectSocket, "connect_error");
+  reconnectSocket.connect();
+  check("reconnect revalidates the handshake token", (await rejectedReconnect).message === "Authentication error");
+  reconnectSocket.disconnect();
+
   const sockA = await connect(tokenA);
   const statusEvents = [];
   sockA.on("user:status", (e) => statusEvents.push(e));
@@ -91,6 +111,12 @@ async function main() {
   const got = await incoming;
   check("ack confirms persisted message", ack.success && ack.message._id && ack.tempId === "t1");
   check("B receives message:new instantly", got.content === "hello B" && got.sender === idA);
+
+  const retries = await Promise.all([1, 2].map(() => emitAck(sockA, "message:send", {
+    conversationId: convId, content: "hello B", tempId: "t1",
+  })));
+  check("concurrent retries reuse the persisted message", retries.every((r) => r.success && r.message._id === ack.message._id));
+  check("persisted retry identity and timestamp are returned", ack.message.tempId === "t1" && !!ack.message.createdAt);
 
   check("empty message rejected", (await emitAck(sockA, "message:send", { conversationId: convId, content: "   " })).success === false);
   check("overlong message rejected",
@@ -114,6 +140,16 @@ async function main() {
 
   const list = await call("GET", "/conversations", null, tokenA);
   check("conversation list shows lastMessage", list.data.conversations?.[0]?.lastMessage?.content === "hello B");
+
+  const firstSends = await Promise.all([1, 2].map(() => emitAck(sockA, "message:send", {
+    conversationId: convId, content: "newest message", tempId: "t2",
+  })));
+  check("concurrent first sends persist one message", firstSends.every((r) => r.success && r.message._id === firstSends[0].message._id));
+  await emitAck(sockA, "message:send", { conversationId: convId, content: "hello B", tempId: "t1" });
+  const afterRetry = await call("GET", "/conversations", null, tokenA);
+  check("retrying an old message preserves the newest preview", afterRetry.data.conversations?.[0]?.lastMessage?.content === "newest message");
+  const retryHistory = await call("GET", `/conversations/${convId}/messages`, null, tokenA);
+  check("history contains exactly two messages after concurrent sends and retries", retryHistory.data.messages?.length === 2);
 
   sockB.disconnect();
   await sleep(300);
