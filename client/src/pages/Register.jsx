@@ -41,7 +41,7 @@ export default function Register() {
       footer={
         <>
           Already registered?{" "}
-          <Link to="/login" className="font-medium text-indigo-600 hover:underline">
+          <Link to="/login" className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
             Log in
           </Link>
         </>
@@ -51,7 +51,7 @@ export default function Register() {
         <Field label="Name" name="name" value={form.name} onChange={update} autoComplete="name" placeholder="Your name" />
         <Field label="Email" type="email" name="email" value={form.email} onChange={update} autoComplete="email" placeholder="you@example.com" />
         <Field label="Password" type="password" name="password" value={form.password} onChange={update} autoComplete="new-password" placeholder="At least 6 characters" />
-        {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+        {error && <p className="rounded-lg bg-rose-50 dark:bg-rose-950 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">{error}</p>}
         <button
           type="submit"
           disabled={busy}

@@ -50,8 +50,8 @@ additional tab for one user. Playwright is a development dependency only.
   per-user presence with multiple sockets, delivery, validation, concurrent retry
   identity, persisted history, and conversation previews.
 - Message reconciliation: history arriving before an acknowledgement, stale
-  history arriving after a socket event, repeated events, and failed
-  acknowledgements reconciled by history.
+  history arriving after a socket event, repeated events, and pending/failed
+  deliveries staying unique without displaying sent before an acknowledgement.
 - Browser: independent sessions, live messages and replies, unique messages after
   reload and reconnect, missed-message recovery, typing and draft clearing,
   multi-tab presence, offline state after closing a context, and 375px navigation.
@@ -88,6 +88,61 @@ The retry fix adds a partial unique MongoDB index on
 Mongoose automatic index creation is disabled. Existing messages without a
 `tempId` are excluded from this index.
 
+## Phase 5 behavior and coverage
+
+`Conversation.lastReadAt` is a MongoDB map serialized as
+`{ "<participant id>": "<ISO timestamp>" }`. Existing conversations need no
+migration: a missing position is treated as the Unix epoch. Existing participant
+and unique `participantsKey` indexes are preserved.
+
+- Client sends `message:read` with `{ conversationId }` after a visible open chat
+  successfully loads history, receives messages, regains visibility, or
+  reconnects. Hidden or failed history views are not marked read.
+- Server validates membership in the update query, obtains the user ID and time
+  itself, and advances that user's position with `$max`. Client-provided IDs or
+  timestamps cannot set someone else's position. Read updates preserve
+  `updatedAt`, so opening a conversation does not move it to the top.
+- Server emits `message:read:update` with `{ conversationId, userId, at }` to
+  both participant rooms, including the reader's other tabs. The optional socket
+  acknowledgement contains `{ success: true, conversationId, userId, at }`;
+  invalid or unauthorized requests receive `{ success: false, message }`.
+- `GET /api/conversations` includes `unreadCount` for each conversation: messages
+  by the other participant with `createdAt > my lastReadAt`. The sidebar uses
+  these server counts, including after reload and reconnect. History also
+  returns `lastReadAt` to restore receipt state after reconnect.
+- My messages show a clock while sending, a single check after acknowledgement,
+  and a double check when the other participant's position reaches the message's
+  `createdAt`. Pending and failed sends remain retryable if the acknowledgement
+  is lost, even when history already contains the persisted message.
+- Date separators use the browser's local calendar with Today/Yesterday labels.
+  Consecutive messages by one sender within five minutes share tighter spacing
+  and corners. Long unbroken content wraps inside the bubble.
+- Dark mode uses Tailwind v4's class-based `dark:` variant. The sidebar footer
+  toggle persists `chat_theme` in localStorage; light is the initial default.
+  Light and dark screenshots are written to ignored `client/test-results/`.
+
+The API suite covers read authorization, server timestamps, independent unread
+counts, multi-tab updates, persistence after disconnect, monotonic read positions,
+and conversation ordering. Browser coverage includes a deliberately held send
+acknowledgement, persistent badges, live/read receipts after reload, skeletons
+with delayed requests, empty states, successful retries after injected history
+and sidebar failures, keyboard focus, and overflow checks at 320/375/768/1280px.
+The suite also checks the dark toggle and preference after reload. Unit tests
+cover date boundaries, message groups, and out-of-order receipt timestamps.
+
+Additional manual checks:
+
+- [ ] With two real browser sessions, leave a chat in a background tab. Messages
+  should remain unread until it becomes visible; then badges clear on all tabs.
+- [ ] Check receipt timing and typing during rapid sends, switches, and unreliable
+  networking. Automated tests cover controlled races, not every network timing.
+- [ ] Inspect text contrast, focus rings, system font rendering, mobile keyboards,
+  and reduced-motion settings on real devices in both themes.
+- [ ] Leave a conversation across midnight, reopen it, and check date labels in
+  the user's local timezone, including daylight-saving boundaries.
+- [ ] Verify older conversations start with all messages from the other person
+  unread until first opening, and that reconnect restores read checks.
+
 ## Phase 4 verification evidence
 
 Executed on 2026-10-27 using the updated backend on port 5001 and the Vite
@@ -104,3 +159,24 @@ development client on port 5174, with the configured development MongoDB:
 
 No production deployment, real mobile devices, Firefox, or Safari was tested.
 The manual checklist above records remaining coverage.
+
+## Phase 5 verification evidence
+
+Executed on 2026-10-27 against the updated backend on port 5001 and development
+client on port 5174:
+
+- `npm run verify`: `All checks passed`, including
+  `PASS - outsider cannot mark a conversation read`,
+  `PASS - unread count survives socket disconnect`, and
+  `PASS - rapid typing updates preserve the newest state`.
+- `npm run build`: `✓ built in 1.11s`.
+- `npm test`: `ℹ tests 6`, `ℹ pass 6`, `ℹ fail 0`.
+- `npm run e2e`: `All browser checks passed`, including persistent unread badges,
+  delayed send acknowledgements, live read checks, all four viewport widths,
+  delayed-request skeletons, retries, keyboard focus, and the persisted theme.
+- `npm run lint` exited successfully with warnings about context exports,
+  effect-driven state updates, and ref cleanup; these warnings remain.
+
+Light and dark desktop screenshots were inspected. Real-device rendering,
+Safari/Firefox, production deployment, and every possible network race remain
+manual checks.

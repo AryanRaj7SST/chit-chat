@@ -87,11 +87,46 @@ export function initSocket(httpServer) {
       }
     });
 
-    // ----- typing -----
-    const relayTyping = (isTyping) => async (payload) => {
+    // ----- read receipts -----
+    socket.on("message:read", async (payload, ack) => {
+      const reply = typeof ack === "function" ? ack : () => {};
       try {
-        const conversation = await getConversationForUser(payload?.conversationId, userId);
-        if (!conversation) return;
+        if (!mongoose.isValidObjectId(payload?.conversationId))
+          return reply({ success: false, message: "Invalid conversation id" });
+        // The caller and timestamp always come from the server, never the payload.
+        // $max keeps concurrent updates from different tabs monotonic.
+        const conversation = await Conversation.findOneAndUpdate(
+          { _id: payload.conversationId, participants: userId },
+          { $max: { [`lastReadAt.${userId}`]: new Date() } },
+          { returnDocument: "after", timestamps: false }
+        );
+        if (!conversation) return reply({ success: false, message: "Conversation not found or access denied" });
+        const data = {
+          conversationId: String(conversation._id), userId,
+          at: conversation.lastReadAt.get(userId).toISOString(),
+        };
+        // Includes the reader's other tabs so badges stay consistent everywhere.
+        io.to(conversation.participants.map((id) => `user:${id}`)).emit("message:read:update", data);
+        reply({ success: true, ...data });
+      } catch (err) {
+        console.error("message:read failed:", err.message);
+        reply({ success: false, message: "Failed to mark conversation read" });
+      }
+    });
+
+    // ----- typing -----
+    let typingSequence = 0;
+    const typingVersions = new Map();
+    const relayTyping = (isTyping) => async (payload) => {
+      const id = payload?.conversationId;
+      if (typeof id !== "string" || !mongoose.isValidObjectId(id)) return;
+      const version = ++typingSequence;
+      typingVersions.set(id, version);
+      try {
+        const conversation = await getConversationForUser(id, userId);
+        // Database lookups can finish out of order. Relay only the newest
+        // typing state for this socket/conversation, including rapid stop/start.
+        if (!conversation || !socket.connected || typingVersions.get(id) !== version) return;
         const rooms = conversation.participants
           .filter((p) => String(p) !== userId)
           .map((p) => `user:${p}`);
@@ -100,6 +135,8 @@ export function initSocket(httpServer) {
         }
       } catch (err) {
         console.error("typing relay failed:", err.message);
+      } finally {
+        if (typingVersions.get(id) === version) typingVersions.delete(id);
       }
     };
     socket.on("typing:start", relayTyping(true));

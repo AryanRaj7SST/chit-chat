@@ -11,7 +11,7 @@ export default function App() {
   return (
     <AuthProvider>
       <SocketProvider>
-        <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
+        <Toaster position="top-center" toastOptions={{ duration: 3000, style: { background: "var(--toast-bg)", color: "var(--toast-text)" } }} />
         <Routes>
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />

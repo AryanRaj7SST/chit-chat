@@ -10,7 +10,9 @@ export function mergeMessages(previous, incoming) {
     if (index < 0) result.push(message);
     else {
       const existing = result[index];
-      result[index] = existing.status && !message.status ? { ...message, status: "sent" } : message;
+      // A history/socket response can prove persistence, but only the send ack
+      // clears this tab's pending/failed delivery state.
+      result[index] = existing.status && !message.status ? { ...message, status: existing.status } : message;
       for (let i = result.length - 1; i > index; i--) {
         if (matches(result[i])) result.splice(i, 1);
       }
@@ -18,3 +20,6 @@ export function mergeMessages(previous, incoming) {
   }
   return result.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 }
+
+export const latestReadAt = (previous, incoming) =>
+  !incoming || (previous && new Date(previous) >= new Date(incoming)) ? previous : incoming;

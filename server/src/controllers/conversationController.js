@@ -12,7 +12,21 @@ export const listConversations = asyncHandler(async (req, res) => {
   const conversations = await populateConversation(
     Conversation.find({ participants: req.user._id, lastMessage: { $ne: null } }).sort({ updatedAt: -1 })
   );
-  res.json({ success: true, conversations });
+  const counts = conversations.length ? await Message.aggregate([
+    { $match: {
+      sender: { $ne: req.user._id },
+      $or: conversations.map((conversation) => ({
+        conversation: conversation._id,
+        createdAt: { $gt: conversation.lastReadAt.get(String(req.user._id)) || new Date(0) },
+      })),
+    } },
+    { $group: { _id: "$conversation", count: { $sum: 1 } } },
+  ]) : [];
+  const unreadCounts = new Map(counts.map((entry) => [String(entry._id), entry.count]));
+  res.json({ success: true, conversations: conversations.map((conversation) => ({
+    ...conversation.toObject({ flattenMaps: true }),
+    unreadCount: unreadCounts.get(String(conversation._id)) || 0,
+  })) });
 });
 
 export const getOrCreateConversation = asyncHandler(async (req, res) => {
@@ -28,7 +42,7 @@ export const getOrCreateConversation = asyncHandler(async (req, res) => {
     conversation = await Conversation.findOneAndUpdate(
       { participantsKey: key },
       { $setOnInsert: { participants: [req.user._id, userId] } },
-      { new: true, upsert: true }
+      { returnDocument: "after", upsert: true }
     );
   } catch (err) {
     if (err.code !== 11000) throw err;
@@ -53,5 +67,5 @@ export const getMessages = asyncHandler(async (req, res) => {
   const found = await Message.find(filter).sort({ createdAt: -1 }).limit(limit + 1);
   const hasMore = found.length > limit;
   const messages = found.slice(0, limit).reverse(); // oldest -> newest
-  res.json({ success: true, messages, hasMore });
+  res.json({ success: true, messages, hasMore, lastReadAt: Object.fromEntries(req.conversation.lastReadAt || []) });
 });

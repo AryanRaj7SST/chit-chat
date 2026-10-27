@@ -21,30 +21,28 @@ export default function ChatPage() {
 
   const [conversations, setConversations] = useState([]);
   const [convsLoading, setConvsLoading] = useState(true);
+  const [convsError, setConvsError] = useState("");
   const [activeConv, setActiveConv] = useState(null);
-  const [unread, setUnread] = useState({});
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState("");
+  const [searchRetry, setSearchRetry] = useState(0);
 
-  const conversationsRef = useRef([]);
-  const activeIdRef = useRef(null);
+  const conversationRequest = useRef(0);
   const receivedIds = useRef(new Set());
-  useEffect(() => {
-    conversationsRef.current = conversations;
-  }, [conversations]);
-  useEffect(() => {
-    activeIdRef.current = activeConv?._id || null;
-  }, [activeConv]);
 
   const loadConversations = useCallback(async () => {
+    const request = ++conversationRequest.current;
     try {
       const { data } = await api.get("/conversations");
+      if (request !== conversationRequest.current) return;
       setConversations(data.conversations);
+      setConvsError("");
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      if (request === conversationRequest.current) setConvsError(getErrorMessage(err));
     } finally {
-      setConvsLoading(false);
+      if (request === conversationRequest.current) setConvsLoading(false);
     }
   }, []);
 
@@ -55,13 +53,17 @@ export default function ChatPage() {
   // debounced user search (empty query lists registered users)
   useEffect(() => {
     let cancelled = false;
+    setUsersLoading(true);
     const timer = setTimeout(
       async () => {
         try {
           const { data } = await api.get("/users", { params: { q: query.trim() } });
-          if (!cancelled) setUsers(data.users);
+          if (!cancelled) {
+            setUsers(data.users);
+            setUsersError("");
+          }
         } catch (err) {
-          if (!cancelled) toast.error(getErrorMessage(err));
+          if (!cancelled) setUsersError(getErrorMessage(err));
         } finally {
           if (!cancelled) setUsersLoading(false);
         }
@@ -72,7 +74,7 @@ export default function ChatPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, searchRetry]);
 
   // sidebar updates for incoming messages + refresh after reconnects
   useEffect(() => {
@@ -82,27 +84,24 @@ export default function ChatPage() {
       if (receivedIds.current.has(msg._id)) return;
       receivedIds.current.add(msg._id);
       if (receivedIds.current.size > 1000) receivedIds.current.delete(receivedIds.current.values().next().value);
-      const known = conversationsRef.current.some((c) => c._id === msg.conversation);
-      if (known) setConversations((prev) => bump(prev, msg));
-      else loadConversations();
-
-      if (msg.conversation !== activeIdRef.current && msg.sender !== user._id) {
-        setUnread((u) => ({ ...u, [msg.conversation]: (u[msg.conversation] || 0) + 1 }));
-      }
+      setConversations((prev) => bump(prev, msg));
+      loadConversations(); // unread counts are always computed by the server
     };
     const onConnect = () => loadConversations();
+    const onRead = () => loadConversations();
 
     socket.on("message:new", onNew);
     socket.on("connect", onConnect);
+    socket.on("message:read:update", onRead);
     return () => {
       socket.off("message:new", onNew);
       socket.off("connect", onConnect);
+      socket.off("message:read:update", onRead);
     };
   }, [socket, user._id, loadConversations]);
 
   const openConversation = (conv) => {
     setActiveConv(conv);
-    setUnread((u) => ({ ...u, [conv._id]: 0 }));
   };
 
   const openWithUser = async (u) => {
@@ -122,12 +121,13 @@ export default function ChatPage() {
         ? bump(prev, msg)
         : [{ ...conv, lastMessage: msg, updatedAt: msg.createdAt }, ...prev]
     );
+    loadConversations();
   };
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-white">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-white dark:bg-slate-900">
       {!connected && (
-        <div className="flex items-center justify-center gap-2 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800">
+        <div className="flex items-center justify-center gap-2 bg-amber-100 dark:bg-amber-950 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200">
           <WifiOff className="h-3.5 w-3.5" />
           Connecting to the server...
         </div>
@@ -143,8 +143,11 @@ export default function ChatPage() {
           users={users}
           usersLoading={usersLoading}
           convsLoading={convsLoading}
+          convsError={convsError}
+          usersError={usersError}
+          onRetryConversations={() => { setConvsLoading(true); loadConversations(); }}
+          onRetryUsers={() => setSearchRetry((value) => value + 1)}
           onlineIds={onlineIds}
-          unread={unread}
           query={query}
           onQueryChange={setQuery}
           onLogout={logout}
@@ -159,12 +162,12 @@ export default function ChatPage() {
             onMessageSent={handleMessageSent}
           />
         ) : (
-          <div className="hidden flex-1 flex-col items-center justify-center bg-slate-50 text-center md:flex">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
+          <div className="hidden min-w-0 flex-1 flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 px-6 text-center md:flex">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
               <MessageCircle className="h-8 w-8" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-800">Select a conversation</h2>
-            <p className="mt-1 max-w-xs text-sm text-slate-500">
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Select a conversation</h2>
+            <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">
               Choose someone from the list or search for a person to start chatting.
             </p>
           </div>

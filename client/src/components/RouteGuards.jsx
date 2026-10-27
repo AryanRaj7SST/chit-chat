@@ -4,8 +4,8 @@ import { useAuth } from "../hooks/useAuth";
 
 function FullScreenSpinner() {
   return (
-    <div className="flex h-dvh items-center justify-center bg-slate-50">
-      <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+    <div className="flex h-dvh items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <Loader2 className="h-8 w-8 animate-spin text-indigo-600 dark:text-indigo-400" />
     </div>
   );
 }

@@ -129,6 +129,11 @@ async function main() {
   const t = await typing;
   check("B receives typing indicator from A", t.userId === idA && t.isTyping === true && t.conversationId === convId);
 
+  const stoppedTyping = waitFor(sockB, "typing:update");
+  sockA.emit("typing:start", { conversationId: convId });
+  sockA.emit("typing:stop", { conversationId: convId });
+  check("rapid typing updates preserve the newest state", (await stoppedTyping).isTyping === false);
+
   let leaked = false;
   sockB.once("typing:update", () => { leaked = true; });
   sockC.emit("typing:start", { conversationId: convId });
@@ -151,9 +156,44 @@ async function main() {
   const retryHistory = await call("GET", `/conversations/${convId}/messages`, null, tokenA);
   check("history contains exactly two messages after concurrent sends and retries", retryHistory.data.messages?.length === 2);
 
+  const unreadB = await call("GET", "/conversations", null, tokenB);
+  check("server counts two unread messages from the other participant", unreadB.data.conversations?.[0]?.unreadCount === 2);
+  check("own messages do not count as unread", afterRetry.data.conversations?.[0]?.unreadCount === 0);
+  let readLeaked = false;
+  sockC.on("message:read:update", () => { readLeaked = true; });
+  check("outsider cannot mark a conversation read", !(await emitAck(sockC, "message:read", { conversationId: convId })).success);
+  check("invalid conversation id cannot be marked read", !(await emitAck(sockB, "message:read", { conversationId: "invalid" })).success);
+  const otherTabB = await connect(tokenB);
+  const readUpdate = waitFor(sockA, "message:read:update");
+  const tabReadUpdate = waitFor(otherTabB, "message:read:update");
+  const readAck = await emitAck(sockB, "message:read", {
+    conversationId: convId, userId: idA, at: "2099-01-01T00:00:00Z",
+  });
+  const readEvent = await readUpdate;
+  check("read update goes to the other participant with server identity and time",
+    readAck.success && readEvent.conversationId === convId && readEvent.userId === idB &&
+    Math.abs(Date.now() - new Date(readEvent.at).getTime()) < 10000);
+  check("read update also synchronizes the reader's other tabs", (await tabReadUpdate).at === readAck.at);
+  otherTabB.disconnect();
+  const readList = await call("GET", "/conversations", null, tokenB);
+  check("marking read clears the persistent unread count", readList.data.conversations?.[0]?.unreadCount === 0);
+  check("per-participant read timestamp persists in REST responses", readList.data.conversations?.[0]?.lastReadAt?.[idB] === readAck.at);
+  check("read updates do not reorder conversations", readList.data.conversations?.[0]?.updatedAt === afterRetry.data.conversations?.[0]?.updatedAt);
+  const repeatRead = await emitAck(sockB, "message:read", { conversationId: convId });
+  check("repeated read timestamps do not move backwards", new Date(repeatRead.at) >= new Date(readAck.at));
+  await emitAck(sockA, "message:send", { conversationId: convId, content: "after read", tempId: "t3" });
+  await emitAck(sockB, "message:send", { conversationId: convId, content: "reply", tempId: "t4" });
+  const latestB = await call("GET", "/conversations", null, tokenB);
+  const latestA = await call("GET", "/conversations", null, tokenA);
+  check("only new messages after lastReadAt are unread", latestB.data.conversations?.[0]?.unreadCount === 1);
+  check("unread counts are independent for each participant", latestA.data.conversations?.[0]?.unreadCount === 1);
+  check("read receipts do not leak to outsiders", !readLeaked);
+
   sockB.disconnect();
   await sleep(300);
   check("A is told B went offline", statusEvents.some((e) => e.userId === idB && e.online === false));
+  const persisted = await call("GET", "/conversations", null, tokenB);
+  check("unread count survives socket disconnect", persisted.data.conversations?.[0]?.unreadCount === 1);
 
   sockA.disconnect();
   sockC.disconnect();

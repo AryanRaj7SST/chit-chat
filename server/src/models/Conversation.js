@@ -9,8 +9,9 @@ const conversationSchema = new mongoose.Schema(
     // sorted "idA_idB" -> unique index prevents duplicate private conversations
     participantsKey: { type: String, required: true, unique: true },
     lastMessage: { type: mongoose.Schema.Types.ObjectId, ref: "Message", default: null },
+    lastReadAt: { type: Map, of: Date, default: () => ({}) },
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { flattenMaps: true } }
 );
 
 conversationSchema.index({ participants: 1, updatedAt: -1 });

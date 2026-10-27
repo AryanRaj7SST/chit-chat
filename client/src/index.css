@@ -1,4 +1,23 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root { color-scheme: light; --toast-bg: var(--color-white); --toast-text: var(--color-slate-900); }
+:root.dark { color-scheme: dark; --toast-bg: var(--color-slate-900); --toast-text: var(--color-slate-100); }
 
 html, body, #root { height: 100%; }
-body { margin: 0; overflow-x: hidden; }
+body { margin: 0; color: var(--toast-text); background: var(--toast-bg); font-family: ui-sans-serif, system-ui, sans-serif; }
+
+@layer base {
+  button, input, textarea { font: inherit; }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  :where(button, a, input, textarea):focus-visible {
+    outline: 2px solid var(--color-indigo-500);
+    outline-offset: 3px;
+  }
+  ::selection { background: var(--color-indigo-100); color: var(--color-indigo-950); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; }
+}

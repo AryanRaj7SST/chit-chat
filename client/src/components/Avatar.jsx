@@ -12,8 +12,8 @@ export default function Avatar({ name, size = "md", online }) {
       </div>
       {online !== undefined && (
         <span
-          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${
-            online ? "bg-emerald-500" : "bg-slate-300"
+          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white dark:border-slate-900 ${
+            online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
           }`}
         />
       )}
