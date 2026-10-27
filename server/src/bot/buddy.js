@@ -87,7 +87,7 @@ export function getBuddyReply(text, { now = new Date(), variant = Math.floor(Mat
   if (/\blove\b/.test(input)) return choose(["A little kindness goes a long way. I'm glad you're here!", "Sending some friendly encouragement your way!"]);
   if (/\bsad\b/.test(input)) return choose(["I'm sorry today feels hard. A small break or a chat with someone you trust might help.", "You don't have to handle a difficult day alone. Consider reaching out to a friend."]);
   if (/\bbored\b/.test(input)) return choose(["How about a short walk, a new song, or a joke?", "Try messaging a friend or ask me for a joke!"]);
-  if (/\b(hi|hello|hey)\b/.test(input)) return choose(["Hello! How's your day going?", "Hey there! Nice to hear from you.", "Hi! Want a joke or some help finding friends?"]);
+  if (/\b(h+i+|he+y+|he+l+o+|hlo|yo+|sup)\b/i.test(input)) return choose(["Hello! How's your day going?", "Hey there! Nice to hear from you.", "Hi! Want a joke or some help finding friends?"]);
   if (input.includes("?")) return choose(["I'm a simple rule-based buddy, so I may not know that answer. Try help for my topics.", "That's beyond my little rulebook. Try joke, time, or help!"]);
   return choose(["I'm here to chat. Type help to see my topics!", "Thanks for sharing! Try help for things I can reply to."]);
 }

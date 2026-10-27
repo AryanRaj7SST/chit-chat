@@ -22,7 +22,7 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 
 - **Persistent unread counts:** computed on the server from per-participant read positions.
 - **Read receipts:** single check after a send acknowledgement; double check when the other participant's read position reaches that message.
-- **Dark mode:** sidebar footer toggle, saved in localStorage, using Tailwind v4's class-based `dark:` variant.
+- **Theme system:** light/dark toggle on auth pages and in the sidebar; first visit follows the system preference. Semantic CSS tokens, pre-React initialization, and localStorage persistence use Tailwind v4's class-based theme support. See the [theme audit and screenshots](docs/THEME_AUDIT.md).
 
 There are no group chats, calls, uploads, end-to-end encryption, push notifications, or emoji picker. The UI loads the latest 50 messages; the API supports paging, but the UI has no older-history pagination controls. Presence is held in one backend process's memory; multi-instance coordination is not implemented.
 

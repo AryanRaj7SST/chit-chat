@@ -10,19 +10,19 @@ export default function MessageBubble({ message, mine, read, onRetry, groupedBef
       <div
         className={`min-w-0 max-w-[80%] rounded-2xl px-3.5 py-2 shadow-sm md:max-w-[65%] ${
           mine
-            ? "rounded-br-md bg-indigo-600 text-white"
-            : "rounded-bl-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+            ? "sent-bubble rounded-br-md text-on-primary"
+            : "received-bubble rounded-bl-md border border-border bg-received text-text"
         } ${groupedBefore ? (mine ? "rounded-tr-md" : "rounded-tl-md") : ""} ${groupedAfter ? (mine ? "rounded-br-md" : "rounded-bl-md") : ""}`}
       >
         <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{message.content}</p>
         <div
-          className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
-            mine ? "text-indigo-200" : "text-slate-400"
+          className={`mt-1 flex items-center justify-end gap-1 text-[11px] ${
+            mine ? "text-sent-muted" : "text-muted"
           }`}
         >
           <span>{formatTime(message.createdAt)}</span>
           {mine && sending && <span aria-label="Sending"><Clock className="h-3 w-3" /></span>}
-          {mine && failed && <AlertCircle className="h-3 w-3 text-rose-200" />}
+          {mine && failed && <AlertCircle className="h-3 w-3 text-on-primary" />}
           {mine && !sending && !failed && (
             <span aria-label={read ? "Read" : "Sent"} title={read ? "Read" : "Sent"}>
               {read ? <CheckCheck className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
@@ -32,7 +32,7 @@ export default function MessageBubble({ message, mine, read, onRetry, groupedBef
         {failed && (
           <button
             onClick={() => onRetry(message)}
-            className="mt-1 text-xs font-medium text-rose-200 underline"
+            className="mt-1 text-xs font-medium text-on-primary underline"
           >
             Failed to send. Tap to retry
           </button>

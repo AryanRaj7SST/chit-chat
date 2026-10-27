@@ -216,11 +216,11 @@ try {
   await mkdir("test-results", { recursive: true });
   await pageA.screenshot({ path: "test-results/phase-5-light.png" });
   const lightBackground = await pageA.locator("section").evaluate((element) => getComputedStyle(element).backgroundColor);
+  const lightInputBackground = await pageA.getByPlaceholder("Search people by name or email").evaluate((element) => getComputedStyle(element).backgroundColor);
   await pageA.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(pageA.locator("html")).toHaveClass("dark");
   await expect.poll(() => pageA.locator("section").evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(lightBackground);
-  const darkBackground = await pageA.locator("section").evaluate((element) => getComputedStyle(element).backgroundColor);
-  await expect.poll(() => pageA.getByPlaceholder("Search people by name or email").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(darkBackground);
+  await expect.poll(() => pageA.getByPlaceholder("Search people by name or email").evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(lightInputBackground);
   const darkText = await pageA.locator("body").evaluate((element) => getComputedStyle(element).color);
   await expect.poll(() => pageA.locator("aside").getByRole("button").filter({ hasText: nameB }).evaluate((element) => getComputedStyle(element).color)).toBe(darkText);
   await pageA.screenshot({ path: "test-results/phase-5-dark.png" });

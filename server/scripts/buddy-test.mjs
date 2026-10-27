@@ -16,4 +16,6 @@ test("Buddy rules have no network dependency and support deterministic context",
   assert.equal(new Set(JOKES).size, 8);
   assert.deepEqual(Array.from({ length: 8 }, (_, jokeIndex) => getBuddyReply("joke", { ...context, jokeIndex })), JOKES);
   assert.equal(getBuddyReply("joke", { ...context, jokeIndex: 8 }), JOKES[0]);
+  for (const greeting of ["hii", "hiii", "heyy", "helloo", "hlo", "yo", "sup"])
+    assert.match(getBuddyReply(greeting, context), /^(Hello|Hey|Hi!)/);
 });

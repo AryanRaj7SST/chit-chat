@@ -198,14 +198,14 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-white dark:bg-slate-900">
+    <div className="app-shell flex h-dvh w-full flex-col overflow-hidden bg-bg">
       {!connected && (
-        <div className="flex items-center justify-center gap-2 bg-amber-100 dark:bg-amber-950 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+        <div className="flex items-center justify-center gap-2 bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted">
           <WifiOff className="h-3.5 w-3.5" />
           Connecting to the server...
         </div>
       )}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 md:gap-4 md:p-4">
         <Sidebar
           className={`${activeConv ? "hidden md:flex" : "flex"} w-full md:w-80 lg:w-96`}
           me={user}
@@ -243,12 +243,12 @@ export default function ChatPage() {
             busy={busy}
           />
         ) : (
-          <div className="hidden min-w-0 flex-1 flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 px-6 text-center md:flex">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
+          <div className="panel hidden min-w-0 flex-1 flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 text-center md:flex">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary-ink">
               <MessageCircle className="h-8 w-8" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Select a conversation</h2>
-            <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">
+            <h2 className="text-lg font-semibold text-text">Select a conversation</h2>
+            <p className="mt-1 max-w-xs text-sm text-muted">
               Chat with Buddy AI, or search for someone and add them as a friend.
             </p>
           </div>

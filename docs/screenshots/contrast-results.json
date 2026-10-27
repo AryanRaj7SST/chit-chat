@@ -1,0 +1,578 @@
+[
+  {
+    "foreground": "#7c5cff",
+    "background": "#1f1f2b",
+    "ratio": 3.7481403312308568,
+    "threshold": 3,
+    "sample": "focus indicator",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#ba5555",
+    "ratio": 4.647667084937681,
+    "threshold": 4.5,
+    "sample": "span.rounded-full bg-danger-fill px-1.5 text-xs text-on-primary",
+    "mode": "dark",
+    "state": "notification-toast"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#6a55c2",
+    "ratio": 5.080851421559045,
+    "threshold": 4.5,
+    "sample": "span.",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#6a55c2",
+    "ratio": 5.080851421559045,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-check-check h-3.5 w-3.5",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#684dd6",
+    "ratio": 5.179169837970533,
+    "threshold": 4.5,
+    "sample": "span.",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#684dd6",
+    "ratio": 5.179169837970533,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-check-check h-3.5 w-3.5",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#aa95ff",
+    "background": "#2e2754",
+    "ratio": 5.518035769458572,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] fon",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#252141",
+    "ratio": 5.554070399190485,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 text-xs text-muted",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f87171",
+    "background": "#2d2028",
+    "ratio": 5.643682460401586,
+    "threshold": 4.5,
+    "sample": "p.rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-ink",
+    "mode": "dark",
+    "state": "login-error"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#6a55c2",
+    "ratio": 5.689141293456204,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-message-circle h-6 w-6",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#6a55c2",
+    "ratio": 5.689141293456204,
+    "threshold": 4.5,
+    "sample": "button.flex w-full items-center justify-center gap-2 brand-gradient roun",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#684dd6",
+    "ratio": 5.799230590761848,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-message-circle h-6 w-6",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#684dd6",
+    "ratio": 5.799230590761848,
+    "threshold": 4.5,
+    "sample": "button.flex w-full items-center justify-center gap-2 brand-gradient roun",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#1f1f2b",
+    "ratio": 5.9133735263107114,
+    "threshold": 4.5,
+    "sample": "input placeholder",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#1f1f2b",
+    "ratio": 5.9133735263107114,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-send h-4 w-4",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#1a1a25",
+    "ratio": 6.2493090913326075,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 text-xs text-muted",
+    "mode": "dark",
+    "state": "history-error"
+  },
+  {
+    "foreground": "#aa95ff",
+    "background": "#25203b",
+    "ratio": 6.252552774263364,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] fon",
+    "mode": "dark",
+    "state": "history-error"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#1a1928",
+    "ratio": 6.281368923741561,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-search absolute left-3 top-1/2 h-4 w-4 -translate-y",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#1a1928",
+    "ratio": 6.281368923741561,
+    "threshold": 4.5,
+    "sample": "p.text-xs text-muted",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f87171",
+    "background": "#16161f",
+    "ratio": 6.496129226945533,
+    "threshold": 4.5,
+    "sample": "p.text-sm text-danger-ink",
+    "mode": "dark",
+    "state": "history-error"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#16161f",
+    "ratio": 6.522971602316985,
+    "threshold": 4.5,
+    "sample": "p.mt-1 text-sm text-muted",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#9a9ab0",
+    "background": "#16161f",
+    "ratio": 6.522971602316985,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-log-out h-4 w-4",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#aa95ff",
+    "background": "#1a1928",
+    "ratio": 6.9644725024456555,
+    "threshold": 4.5,
+    "sample": "button.flex-1 rounded-t-lg px-3 py-2 text-sm font-medium border-b-2 bord",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#aa95ff",
+    "background": "#16161f",
+    "ratio": 7.232349653411256,
+    "threshold": 4.5,
+    "sample": "a.font-medium text-primary-ink hover:underline",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#16161f",
+    "background": "#aa95ff",
+    "ratio": 7.232349653411256,
+    "threshold": 4.5,
+    "sample": "text selection",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#22c55e",
+    "background": "#1a1928",
+    "ratio": 7.593963464700371,
+    "threshold": 4.5,
+    "sample": "p.text-xs text-online-ink",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#22c55e",
+    "background": "#16161f",
+    "ratio": 7.886052965627605,
+    "threshold": 3,
+    "sample": "online status dot",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#252141",
+    "ratio": 13.833248931126487,
+    "threshold": 4.5,
+    "sample": "span.truncate text-base font-semibold",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#1f1f2b",
+    "ratio": 14.728147490552509,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-sun h-[18px] w-[18px]",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#1f1f2b",
+    "ratio": 14.728147490552509,
+    "threshold": 4.5,
+    "sample": "input.w-full rounded-xl border border-border bg-input px-3.5 py-3 text-",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#1a1a25",
+    "ratio": 15.56484561674908,
+    "threshold": 4.5,
+    "sample": "span.truncate text-base font-semibold",
+    "mode": "dark",
+    "state": "history-error"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#1a1928",
+    "ratio": 15.644695458491794,
+    "threshold": 4.5,
+    "sample": "span.text-lg font-semibold text-text",
+    "mode": "dark",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#16161f",
+    "ratio": 16.24644332176121,
+    "threshold": 3,
+    "sample": "h1.text-2xl font-semibold text-text",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#f3f3f8",
+    "background": "#16161f",
+    "ratio": 16.24644332176121,
+    "threshold": 4.5,
+    "sample": "span.mb-1 block text-sm font-medium text-text",
+    "mode": "dark",
+    "state": "login"
+  },
+  {
+    "foreground": "#16a34a",
+    "background": "#ffffff",
+    "ratio": 3.2957336053312796,
+    "threshold": 3,
+    "sample": "online status dot",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#efedf8",
+    "ratio": 4.693658476218502,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#efedf8",
+    "ratio": 4.693658476218502,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-send h-4 w-4",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#f0edff",
+    "ratio": 4.72560102614219,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 text-xs text-muted",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#c62222",
+    "background": "#fbe9e9",
+    "ratio": 4.908754864018331,
+    "threshold": 4.5,
+    "sample": "p.rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-ink",
+    "mode": "light",
+    "state": "login-error"
+  },
+  {
+    "foreground": "#5d3fd9",
+    "background": "#e3ddff",
+    "ratio": 5.03888192570068,
+    "threshold": 4.5,
+    "sample": "span.shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] fon",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#f9f8ff",
+    "ratio": 5.148973466237664,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-search absolute left-3 top-1/2 h-4 w-4 -translate-y",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#f9f8ff",
+    "ratio": 5.148973466237664,
+    "threshold": 4.5,
+    "sample": "p.text-xs text-muted",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#6d4aff",
+    "background": "#ffffff",
+    "ratio": 5.154950775529779,
+    "threshold": 3,
+    "sample": "focus indicator",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#ffffff",
+    "ratio": 5.433888256445167,
+    "threshold": 4.5,
+    "sample": "p.mt-1 text-sm text-muted",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#6a6780",
+    "background": "#ffffff",
+    "ratio": 5.433888256445167,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-moon h-[18px] w-[18px]",
+    "mode": "light",
+    "state": "register"
+  },
+  {
+    "foreground": "#0f7234",
+    "background": "#f9f8ff",
+    "ratio": 5.723300710647171,
+    "threshold": 4.5,
+    "sample": "p.text-xs text-online-ink",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#c62222",
+    "background": "#ffffff",
+    "ratio": 5.7486006363455004,
+    "threshold": 4.5,
+    "sample": "p.text-sm text-danger-ink",
+    "mode": "light",
+    "state": "history-error"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#5c3ed6",
+    "ratio": 6.020524098761155,
+    "threshold": 4.5,
+    "sample": "span.",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#5c3ed6",
+    "ratio": 6.020524098761155,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-check-check h-3.5 w-3.5",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#5d3fd9",
+    "background": "#f9f8ff",
+    "ratio": 6.260698341543391,
+    "threshold": 4.5,
+    "sample": "button.flex-1 rounded-t-lg px-3 py-2 text-sm font-medium border-b-2 bord",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#5d3fd9",
+    "background": "#ffffff",
+    "ratio": 6.607129638233815,
+    "threshold": 4.5,
+    "sample": "a.font-medium text-primary-ink hover:underline",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#5d3fd9",
+    "ratio": 6.607129638233815,
+    "threshold": 4.5,
+    "sample": "text selection",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#5c3ed6",
+    "ratio": 6.741313495839299,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-message-circle h-6 w-6",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#5c3ed6",
+    "ratio": 6.741313495839299,
+    "threshold": 4.5,
+    "sample": "button.flex w-full items-center justify-center gap-2 brand-gradient roun",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#a51d1d",
+    "ratio": 7.517843694365164,
+    "threshold": 4.5,
+    "sample": "span.rounded-full bg-danger-fill px-1.5 text-xs text-on-primary",
+    "mode": "light",
+    "state": "requests"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#452bb0",
+    "ratio": 8.427125078154726,
+    "threshold": 4.5,
+    "sample": "span.",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#f4f0ff",
+    "background": "#452bb0",
+    "ratio": 8.427125078154726,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-check-check h-3.5 w-3.5",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#452bb0",
+    "ratio": 9.436037642001972,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-message-circle h-6 w-6",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#ffffff",
+    "background": "#452bb0",
+    "ratio": 9.436037642001972,
+    "threshold": 4.5,
+    "sample": "button.flex w-full items-center justify-center gap-2 brand-gradient roun",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#17151f",
+    "background": "#efedf8",
+    "ratio": 15.590491229931333,
+    "threshold": 3,
+    "sample": "svg.lucide lucide-moon h-[18px] w-[18px]",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#17151f",
+    "background": "#f0edff",
+    "ratio": 15.696591843550781,
+    "threshold": 4.5,
+    "sample": "span.truncate text-base font-semibold",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#17151f",
+    "background": "#f9f8ff",
+    "ratio": 17.1028689188315,
+    "threshold": 4.5,
+    "sample": "span.text-lg font-semibold text-text",
+    "mode": "light",
+    "state": "buddy"
+  },
+  {
+    "foreground": "#17151f",
+    "background": "#ffffff",
+    "ratio": 18.04924402484188,
+    "threshold": 3,
+    "sample": "h1.text-2xl font-semibold text-text",
+    "mode": "light",
+    "state": "login"
+  },
+  {
+    "foreground": "#17151f",
+    "background": "#ffffff",
+    "ratio": 18.04924402484188,
+    "threshold": 4.5,
+    "sample": "span.mb-1 block text-sm font-medium text-text",
+    "mode": "light",
+    "state": "login"
+  }
+]

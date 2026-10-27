@@ -188,28 +188,28 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
   }, [messages.length, otherTyping, loading]);
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-950">
-      <header className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-3 shadow-sm md:px-4">
+    <section className="panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-border bg-surface md:rounded-2xl">
+      <header className="flex items-center gap-3 border-b border-border bg-header px-3 py-4 md:px-5">
         <button
           onClick={onBack}
           aria-label="Back to conversations"
-          className="rounded-lg p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden"
+          className="rounded-lg p-2 text-muted hover:bg-surface-2 md:hidden"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <Avatar name={other.name} online={isOnline} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{other.name}</p>
-          <p className={`text-xs ${otherTyping ? "text-indigo-600 dark:text-indigo-400" : isOnline ? "text-emerald-600" : "text-slate-400"}`}>
+          <p className="truncate text-base font-semibold text-text">{other.name}</p>
+          <p className={`text-xs ${otherTyping ? "text-primary-ink " : isOnline ? "text-online-ink" : "text-muted"}`}>
             {otherTyping ? "typing..." : other.isBot ? "Always online - automated replies" : isOnline ? "Online" : "Offline"}
           </p>
         </div>
         {!other.isBot && (
           <details className="relative shrink-0">
-            <summary aria-label="Friend options" className="list-none rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><MoreVertical className="h-5 w-5" /></summary>
+            <summary aria-label="Friend options" className="list-none rounded-lg p-2 text-muted hover:bg-surface-2"><MoreVertical className="h-5 w-5" /></summary>
             <button disabled={busy} onClick={() => {
               if (window.confirm(`Unfriend ${other.name}? Your saved history will remain, but you cannot send new messages until you are friends again.`)) onUnfriend(otherId);
-            }} className="absolute right-0 z-10 mt-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-rose-600 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-rose-400">Unfriend</button>
+            }} className="absolute right-0 z-10 mt-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-danger-ink shadow-lg">Unfriend</button>
           </details>
         )}
       </header>
@@ -219,19 +219,19 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
           <MessagesSkeleton />
         ) : error ? (
           <div role="alert" className="mx-auto mt-10 max-w-xs text-center">
-            <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+            <p className="text-sm text-danger-ink">{error}</p>
             <button
               onClick={() => {
                 setLoading(true);
                 loadMessages();
               }}
-              className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              className="brand-gradient mt-3 rounded-xl px-4 py-2 text-sm font-medium text-on-primary"
             >
               Try again
             </button>
           </div>
         ) : messages.length === 0 ? (
-          <p className="mt-10 text-center text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-10 text-center text-sm text-muted">
             No messages yet. Say hello to {other.name}!
           </p>
         ) : (
@@ -240,9 +240,9 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
               <Fragment key={m.tempId || m._id}>
                 {(index === 0 || new Date(messages[index - 1].createdAt).toDateString() !== new Date(m.createdAt).toDateString()) && (
                   <div role="separator" aria-label={formatMessageDate(m.createdAt)} className="my-5 flex items-center gap-3">
-                    <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-                    <span className="shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">{formatMessageDate(m.createdAt)}</span>
-                    <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                    <span className="h-px flex-1 bg-border" />
+                    <span className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1 text-[11px] font-medium text-muted">{formatMessageDate(m.createdAt)}</span>
+                    <span className="h-px flex-1 bg-border" />
                   </div>
                 )}
                 <MessageBubble
@@ -260,12 +260,11 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
 
         {otherTyping && (
           <div className="mt-2 flex justify-start">
-            <div className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-border bg-surface px-4 py-3 shadow-sm">
               {[0, 150, 300].map((delay) => (
                 <span
                   key={delay}
-                  className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"
-                  style={{ animationDelay: `${delay}ms` }}
+                  className="h-1.5 w-1.5 rounded-full bg-muted"
                 />
               ))}
             </div>

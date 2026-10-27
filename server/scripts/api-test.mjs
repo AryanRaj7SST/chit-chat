@@ -1,6 +1,7 @@
 import "dotenv/config";
 import jwt from "jsonwebtoken";
 import { io } from "socket.io-client";
+import { getBuddyReply } from "../src/bot/buddy.js";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").trim().replace(/\/+$/, "");
 const baseUrl = new URL(BASE);
@@ -42,6 +43,8 @@ const waitFor = (socket, event, ms = 2000) =>
 const emitAck = (socket, event, payload) => socket.timeout(10000).emitWithAck(event, payload);
 
 async function main() {
+  const stretchedGreeting = getBuddyReply("hii", { variant: 0 });
+  check("Buddy recognizes hii instead of the generic fallback", /^hello|^hey|^hi!/i.test(stretchedGreeting) && stretchedGreeting !== getBuddyReply("unmatched words", { variant: 0 }));
   const reg = (label) =>
     call("POST", "/auth/register", { name: `Test ${label}`, email: `${label}${run}@test.com`, password: "secret123" });
 

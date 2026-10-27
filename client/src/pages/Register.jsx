@@ -41,7 +41,7 @@ export default function Register() {
       footer={
         <>
           Already registered?{" "}
-          <Link to="/login" className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+          <Link to="/login" className="font-medium text-primary-ink hover:underline">
             Log in
           </Link>
         </>
@@ -51,13 +51,13 @@ export default function Register() {
         <Field label="Name" name="name" value={form.name} onChange={update} autoComplete="name" placeholder="Your name" />
         <Field label="Email" type="email" name="email" value={form.email} onChange={update} autoComplete="email" placeholder="you@example.com" />
         <Field label="Password" type="password" name="password" value={form.password} onChange={update} autoComplete="new-password" placeholder="At least 6 characters" />
-        {error && <p className="rounded-lg bg-rose-50 dark:bg-rose-950 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">{error}</p>}
+        {error && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-ink">{error}</p>}
         <button
           type="submit"
           disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 brand-gradient rounded-xl py-2.5 text-sm font-semibold text-on-primary shadow-sm transition disabled:cursor-not-allowed"
         >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          {busy && <Loader2 className="h-4 w-4" />}
           {busy ? "Creating account..." : "Sign up"}
         </button>
       </form>

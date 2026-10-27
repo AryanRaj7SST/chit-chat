@@ -1,16 +1,5 @@
-const COLORS = [
-  "bg-indigo-500", "bg-rose-500", "bg-emerald-500", "bg-amber-500",
-  "bg-sky-500", "bg-violet-500", "bg-teal-500", "bg-pink-500",
-];
-
 export const getInitials = (name = "") =>
   name.trim().split(/\s+/).slice(0, 2).map((w) => (w[0] || "").toUpperCase()).join("") || "?";
-
-export const avatarColor = (name = "") => {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return COLORS[h % COLORS.length];
-};
 
 export const formatTime = (iso) =>
   new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
