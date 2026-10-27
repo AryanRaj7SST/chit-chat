@@ -20,24 +20,25 @@ export function sniffImage(bytes) {
   return null;
 }
 export const allowedImages = "image/jpeg,image/png,image/webp,image/gif";
-export async function prepareImage(file) {
+export async function prepareImage(file, { maxWidth = 480, maxHeight = Infinity } = {}) {
   if (file.size > 25 * 1024 * 1024) throw new Error("Photos must be 25 MB or smaller.");
   const mime = sniffImage(new Uint8Array(await file.slice(0, 32).arrayBuffer()));
   if (!mime) throw new Error("Choose a JPEG, PNG, WebP, or GIF with valid image bytes. SVG and HEIC are not supported.");
   // The original File is kept untouched, regardless of its name or browser MIME.
-  let thumb, width, height, bitmap;
+  let thumb, width, height, bitmap, thumbWidth, thumbHeight;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
     width = bitmap.width; height = bitmap.height;
-    const scale = Math.min(1, 480 / width);
+    const scale = Math.min(1, maxWidth / width, maxHeight / height);
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
+    thumbWidth = canvas.width; thumbHeight = canvas.height;
     canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     thumb = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.8));
     if (thumb?.size > 400 * 1024) thumb = null;
   } catch { /* A valid original can be sent even if thumbnail decoding fails. */ }
   finally { bitmap?.close(); }
-  return { file, mime, thumb, width, height };
+  return { file, mime, thumb, width, height, thumbWidth, thumbHeight };
 }
 export async function uploadImage(blob, mime, conversationId, kind, dimensions, signal, progress) {
   const { data } = await api.post("/uploads/sign", { conversationId, kind, mime, size: blob.size, ...dimensions }, { signal });

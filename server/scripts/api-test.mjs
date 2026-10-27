@@ -306,6 +306,7 @@ async function main() {
   const botAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hii", tempId: "bot-hello" });
   const hello = await botMessage;
   check("Buddy replies after a successful ack", botAck.success && hello.sender === buddyId && !!hello.content);
+  check("Buddy delivery is recorded before its read receipt", !!botAck.message.deliveredAt);
   check("Buddy greets hii over the socket", /^(Hello|Hey|Hi!)/.test(hello.content));
   const jokeMessage = waitFor(sockA, "message:new", 3000);
   await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "joke", tempId: "bot-joke" });
@@ -378,6 +379,139 @@ async function main() {
   check("keys from another conversation cannot be attached", !(await emitAck(sockA, "message:send", { conversationId: convId, tempId: "foreign-photo", attachments: [{ key: foreign.data.key }] })).success);
   check("image sends to Buddy are refused even without signing", (await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, type: "image", attachments: [{ key: original.data.key }] })).message === "Buddy can't see images yet");
   check("text limit counts emoji graphemes instead of UTF-16 units", (await emitAck(sockA, "message:send", { conversationId: convId, content: "😀".repeat(2000), tempId: "emoji-limit" })).success);
+
+  const featureB = await connect(tokenB);
+  const baseFeature = (await emitAck(sockA, "message:send", { conversationId: convId, content: "Feature search [literal] original", tempId: "feature-base" })).message;
+  check("sender cannot forge delivery", !(await emitAck(sockA, "message:delivered", { messageId: baseFeature._id })).success);
+  check("outsider cannot acknowledge delivery", !(await emitAck(sockC, "message:delivered", { messageId: baseFeature._id })).success);
+  check("recipient can acknowledge delivery", (await emitAck(featureB, "message:delivered", { messageId: baseFeature._id })).success);
+  check("delivery persists independently of read", !!(await call("GET", `/conversations/${convId}/messages`, null, tokenA)).data.messages.find(message => message._id === baseFeature._id)?.deliveredAt);
+  const replyFeature = await emitAck(sockA, "message:send", { conversationId: convId, content: "Reply test", replyTo: baseFeature._id, tempId: "feature-reply" });
+  check("reply includes a validated quote", replyFeature.success && replyFeature.message.replyTo._id === baseFeature._id && replyFeature.message.replyTo.preview.includes("original"));
+  check("cross-conversation reply is rejected", !(await emitAck(sockA, "message:send", { conversationId: convId, content: "Forbidden reply", replyTo: hello._id, tempId: "feature-foreign-reply" })).success);
+  check("outsider cannot react", !(await emitAck(sockC, "message:react", { messageId: baseFeature._id, emoji: "👍" })).success);
+  check("reaction allowlist is enforced", !(await emitAck(featureB, "message:react", { messageId: baseFeature._id, emoji: "anything" })).success);
+  check("member can react", (await emitAck(featureB, "message:react", { messageId: baseFeature._id, emoji: "👍" })).success);
+  await Promise.all([emitAck(featureB, "message:react", { messageId: baseFeature._id, emoji: "😂" }), emitAck(featureB, "message:react", { messageId: baseFeature._id, emoji: "❤️" })]);
+  const reacted = (await call("GET", `/conversations/${convId}/messages`, null, tokenA)).data.messages.find(message => message._id === baseFeature._id);
+  check("concurrent reactions keep one per user", reacted.reactions.filter(reaction => reaction.user === idB).length === 1);
+  check("reaction can be removed", (await emitAck(featureB, "message:react", { messageId: baseFeature._id, emoji: null })).success);
+  check("non-sender cannot edit", !(await emitAck(featureB, "message:edit", { messageId: baseFeature._id, content: "Hacked" })).success);
+  check("sender can edit recent text", (await emitAck(sockA, "message:edit", { messageId: baseFeature._id, content: "Edited feature [literal]" })).success);
+  const edited = (await call("GET", `/conversations/${convId}/messages?q=${encodeURIComponent("[literal]")}`, null, tokenA)).data.messages;
+  check("search is literal and includes edited text", edited.some(message => message._id === baseFeature._id && message.editedAt));
+  check("search denies outsiders", (await call("GET", `/conversations/${convId}/messages?q=feature`, null, tokenC)).status === 403);
+  check("non-sender cannot delete for everyone", !(await emitAck(featureB, "message:delete", { messageId: baseFeature._id, forEveryone: true })).success);
+  check("recipient can hide their own view", (await emitAck(featureB, "message:delete", { messageId: baseFeature._id, forEveryone: false })).success);
+  check("hidden messages stay out of the recipient's history", !(await call("GET", `/conversations/${convId}/messages`, null, tokenB)).data.messages.some(message => message._id === baseFeature._id));
+  check("hiding does not delete the sender's view", (await call("GET", `/conversations/${convId}/messages`, null, tokenA)).data.messages.some(message => message._id === baseFeature._id));
+  for (const event of ["message:react", "message:edit", "message:delete"]) check(`Buddy rejects ${event}`, !(await emitAck(sockA, event, { messageId: hello._id, emoji: "👍", content: "edit", forEveryone: true })).success);
+  if (["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname)) {
+    const mongoose = (await import("mongoose")).default;
+    const Message = (await import("../src/models/Message.js")).default;
+    const User = (await import("../src/models/User.js")).default;
+    await mongoose.connect(process.env.MONGO_URI);
+    try {
+      await Message.collection.updateOne({ _id: new mongoose.Types.ObjectId(baseFeature._id), sender: new mongoose.Types.ObjectId(idA) }, { $set: { createdAt: new Date(Date.now() - 16 * 60000) } });
+      check("edit after fifteen minutes is rejected", !(await emitAck(sockA, "message:edit", { messageId: baseFeature._id, content: "Too late" })).success);
+      await Message.collection.updateOne({ _id: new mongoose.Types.ObjectId(baseFeature._id), sender: new mongoose.Types.ObjectId(idA) }, { $set: { createdAt: new Date(Date.now() - 49 * 3600000) } });
+      check("delete after forty-eight hours is rejected", !(await emitAck(sockA, "message:delete", { messageId: baseFeature._id, forEveryone: true })).success);
+      await User.updateOne({ _id: idB }, { "settings.readReceipts": false });
+      let privateReadLeak = false;
+      const privateReadListener = update => { if (update.conversationId === convId && update.userId === idB) privateReadLeak = true; };
+      sockA.on("message:read:update", privateReadListener);
+      await emitAck(featureB, "message:read", { conversationId: convId });
+      await sleep(150); sockA.off("message:read:update", privateReadListener);
+      check("private read updates are not emitted to the other participant", !privateReadLeak);
+      const privateReads = (await call("GET", `/conversations/${convId}/messages`, null, tokenA)).data.lastReadAt;
+      check("private read positions are omitted from history", !privateReads[idB]);
+      check("private read positions are omitted from conversation lists", !(await call("GET", "/conversations", null, tokenA)).data.conversations.find(c => c._id === convId).lastReadAt[idB]);
+      await User.updateOne({ _id: idB }, { "settings.readReceipts": true });
+      const tieTime = new Date(Date.now() - 5000);
+      const tied = await Message.insertMany([0, 1, 2].map(index => ({ conversation: convId, sender: idA, content: `Cursor tie fixture ${index}`, createdAt: tieTime })));
+      const beforeTie = (await call("GET", `/conversations/${convId}/messages?limit=1&before=${encodeURIComponent(`${tieTime.toISOString()}|${tied[2]._id}`)}`, null, tokenA)).data.messages;
+      check("history cursor preserves messages with equal timestamps", beforeTie[0]?._id === String(tied[1]._id));
+      check("around cursor always includes the exact target", (await call("GET", `/conversations/${convId}/messages?around=${tied[0]._id}`, null, tokenA)).data.messages.some(message => message._id === String(tied[0]._id)));
+    } finally { await mongoose.disconnect(); }
+  } else process.stdout.write("SKIP - message time travel and privacy fixture mutation are local-only\n");
+  check("sender can delete image for everyone", (await emitAck(sockA, "message:delete", { messageId: imageAck.message._id, forEveryone: true })).success);
+  check("Buddy accepts replies in its own conversation", (await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, replyTo: hello._id, content: "hii", tempId: "buddy-reply" })).success);
+  check("deleted image media URL is denied", (await call("GET", `/media?key=${encodeURIComponent(original.data.key)}`, null, tokenA)).status === 404);
+  if (localDriver) { const { local } = await import("../src/storage/local.js"); check("delete-for-everyone removes image bytes", await local.head(original.data.key) === null); }
+  check("outsider cannot change chat settings", (await call("PATCH", `/conversations/${convId}/settings`, { pinned: true }, tokenC)).status === 403);
+  for (const id of [convId, otherConversation.data.conversation._id, buddyConversation._id]) check("member can pin a chat", (await call("PATCH", `/conversations/${id}/settings`, { pinned: true }, tokenA)).status === 200);
+  const rd = await reg("pin-extra");
+  const invitationD = await call("POST", "/friends/requests", { userId: rd.data.user._id }, tokenA);
+  await call("POST", `/friends/requests/${invitationD.data.requestId}/accept`, {}, rd.data.token);
+  const extraChat = await call("POST", "/conversations", { userId: rd.data.user._id }, tokenA);
+  check("fourth pinned chat is rejected", (await call("PATCH", `/conversations/${extraChat.data.conversation._id}/settings`, { pinned: true }, tokenA)).status === 400);
+  await call("PATCH", `/conversations/${convId}/settings`, { muted: true, archived: true }, tokenA);
+  const settingsA = (await call("GET", "/conversations", null, tokenA)).data.conversations.find(c => c._id === convId).settings;
+  const settingsB = (await call("GET", "/conversations", null, tokenB)).data.conversations.find(c => c._id === convId).settings;
+  check("mute/archive/pin persist per user", settingsA.pinned && settingsA.muted && settingsA.archived && !settingsB.pinned && !settingsB.muted && !settingsB.archived);
+  await call("PATCH", `/conversations/${convId}/settings`, { muted: false, archived: false }, tokenA);
+  check("profile rejects overlong About", (await call("PATCH", "/users/me", { about: "x".repeat(141) }, tokenA)).status === 400);
+  check("profile name/About update is authenticated", (await call("PATCH", "/users/me", { name: "Feature Alice", about: "Local integration profile" }, tokenA)).data.user?.name === "Feature Alice");
+  const avatar = await sign({ kind: "avatar-original", size: png.length, width: 1, height: 1 });
+  const avatarThumb = await sign({ kind: "avatar-thumb", size: png.length, width: 1, height: 1 });
+  await put(avatar.data, png); await put(avatarThumb.data, png);
+  check("avatar keys use the authenticated owner namespace", avatar.data.key.startsWith(`u/${idA}/`));
+  check("another user cannot claim an avatar upload", (await call("PATCH", "/users/me", { avatar: { key: avatar.data.key, thumbKey: avatarThumb.data.key } }, tokenB)).status === 403);
+  check("own validated avatar can be saved", (await call("PATCH", "/users/me", { avatar: { key: avatar.data.key, thumbKey: avatarThumb.data.key } }, tokenA)).data.user?.avatar?.thumbKey === avatarThumb.data.key);
+  check("avatar thumb can be requested through authenticated media", (await call("GET", `/media?key=${encodeURIComponent(avatarThumb.data.key)}`, null, tokenB)).status === 200);
+  check("outsider cannot set a disappearing timer", !(await emitAck(sockC, "conversation:timer", { conversationId: convId, seconds: 86400 })).success);
+  check("Buddy refuses disappearing timers", !(await emitAck(sockA, "conversation:timer", { conversationId: buddyConversation._id, seconds: 3600 })).success);
+  check("invalid timer options are rejected", !(await emitAck(sockA, "conversation:timer", { conversationId: convId, seconds: 15 })).success);
+  check("either member can set a timer", (await emitAck(featureB, "conversation:timer", { conversationId: convId, seconds: 86400 })).success);
+  const timed = await emitAck(sockA, "message:send", { conversationId: convId, content: "Timed feature message", tempId: "feature-timed" });
+  check("new messages use the conversation timer", timed.success && Math.abs(new Date(timed.message.expireAt) - new Date(timed.message.createdAt) - 86400000) < 3000);
+  check("timer change creates a system message", (await call("GET", `/conversations/${convId}/messages?q=${encodeURIComponent("set disappearing messages")}`, null, tokenA)).data.messages.some(message => message.type === "system"));
+  if (["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname)) {
+    const mongoose = (await import("mongoose")).default;
+    const Message = (await import("../src/models/Message.js")).default;
+    const { sweepExpired } = await import("../src/services/expiry.js");
+    const expiresPhoto = await sign({ size: png.length }); await put(expiresPhoto.data, png);
+    const expiresAck = await emitAck(sockA, "message:send", { conversationId: convId, tempId: "expires-photo", attachments: [{ key: expiresPhoto.data.key }] });
+    check("timed media is protected from automatic TTL deletion", expiresAck.success && expiresAck.message.hasMedia && !!expiresAck.message.expireAt);
+    await mongoose.connect(process.env.MONGO_URI);
+    try {
+      const indexes = await Message.collection.indexes();
+      check("TTL index excludes media documents", indexes.some(index => index.key.expireAt === 1 && index.expireAfterSeconds === 0 && index.partialFilterExpression?.hasMedia === false));
+      await Message.updateOne({ _id: expiresAck.message._id }, { expireAt: new Date(Date.now() - 1000) });
+      check("expired media URLs are denied before sweeping", (await call("GET", `/media?key=${encodeURIComponent(expiresPhoto.data.key)}`, null, tokenA)).status === 404);
+      if (localDriver) {
+        const { getStorage } = await import("../src/storage/index.js");
+        const storage = getStorage(), remove = storage.remove;
+        storage.remove = async key => { if (key === expiresPhoto.data.key) throw new Error("Simulated storage outage"); return remove(key); };
+        try {
+          const failedSweep = await sweepExpired({ onlyIds: [expiresAck.message._id] });
+          check("failed media cleanup preserves the expired document for retry", failedSweep.failed === 1 && !!(await Message.exists({ _id: expiresAck.message._id })) && !!(await storage.head(expiresPhoto.data.key)));
+        } finally { storage.remove = remove; }
+      }
+      const swept = await sweepExpired({ onlyIds: [expiresAck.message._id] });
+      check("sweeper removes expired documents after media cleanup", swept.removed === 1 && !(await Message.exists({ _id: expiresAck.message._id })));
+      if (localDriver) { const { local } = await import("../src/storage/local.js"); check("expired media bytes are physically removed", await local.head(expiresPhoto.data.key) === null); }
+    } finally { await mongoose.disconnect(); }
+  } else process.stdout.write("SKIP - expiry time-travel/storage inspection is local-only\n");
+  await emitAck(sockA, "conversation:timer", { conversationId: convId, seconds: 0 });
+  check("turning timers Off leaves new messages without expiry", !(await emitAck(sockA, "message:send", { conversationId: convId, content: "Timer off", tempId: "timer-off" })).message.expireAt);
+  check("block succeeds", (await call("POST", `/users/${idB}/block`, {}, tokenA)).status === 200);
+  check("blocking removes friendship", !(await call("GET", "/friends", null, tokenA)).data.friends.some(user => user._id === idB));
+  check("blocked users are hidden from both searches", !(await call("GET", `/users?q=b${run}@test`, null, tokenA)).data.users.some(user => user._id === idB) && !(await call("GET", "/users?q=Feature%20Alice", null, tokenB)).data.users.some(user => user._id === idA));
+  check("blocked user cannot send messages", !(await emitAck(featureB, "message:send", { conversationId: convId, content: "Blocked", tempId: "blocked-send" })).success);
+  check("blocked user cannot react or edit", !(await emitAck(featureB, "message:react", { messageId: timed.message._id, emoji: "👍" })).success && !(await emitAck(sockA, "message:edit", { messageId: timed.message._id, content: "Blocked edit" })).success);
+  check("blocked users cannot sign uploads", (await sign()).status === 403);
+  check("blocked users cannot request avatars", (await call("GET", `/media?key=${encodeURIComponent(avatarThumb.data.key)}`, null, tokenB)).status === 403);
+  check("blocked friend requests fail both ways", (await call("POST", "/friends/requests", { userId: idA }, tokenB)).status === 403 && (await call("POST", "/friends/requests", { userId: idB }, tokenA)).status === 403);
+  check("self and Buddy cannot be blocked", (await call("POST", `/users/${idA}/block`, {}, tokenA)).status === 400 && (await call("POST", `/users/${buddyId}/block`, {}, tokenA)).status === 400);
+  check("only the block owner sees and removes their block", (await call("GET", "/users/blocked", null, tokenA)).data.users.some(user => user._id === idB) && !(await call("GET", "/users/blocked", null, tokenB)).data.users.some(user => user._id === idA));
+  await call("DELETE", `/users/${idB}/block`, null, tokenA);
+  check("unblocking does not recreate friendship", !(await call("GET", "/friends", null, tokenA)).data.friends.some(user => user._id === idB));
+  const previousSeen = (await call("GET", "/auth/me", null, tokenB)).data.user.lastSeenAt;
+  featureB.disconnect();
+  let newSeen;
+  for (let i = 0; i < 20; i++) { await sleep(100); newSeen = (await call("GET", "/auth/me", null, tokenB)).data.user.lastSeenAt; if (newSeen && newSeen !== previousSeen) break; }
+  check("last-seen timestamp persists after the final socket disconnects", newSeen && new Date(newSeen) > new Date(previousSeen || 0));
 
   const limited = await reg("limited");
   for (let i = 0; i < 30; i++) await sign({}, limited.data.token);

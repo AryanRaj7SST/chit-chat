@@ -7,6 +7,9 @@ import { getUserFromToken } from "../utils/token.js";
 import { characterCount, cleanMessageContent, MAX_MESSAGE_LENGTH } from "../utils/validators.js";
 import { requireImageConversation, validateAttachments } from "../controllers/uploadController.js";
 import Upload from "../models/Upload.js";
+import User from "../models/User.js";
+import { registerMessageActions } from "./messageActions.js";
+import { messageViews, notExpired } from "../utils/messageView.js";
 import { canMessage, getFriendIds } from "../utils/friendship.js";
 import { ensureBuddy, getBuddyReply } from "../bot/buddy.js";
 
@@ -15,7 +18,7 @@ export const getIO = () => currentIO;
 
 const getConversationForUser = (conversationId, userId) => {
   if (!mongoose.isValidObjectId(conversationId)) return null;
-  return Conversation.findOne({ _id: conversationId, participants: userId }).select("participants");
+  return Conversation.findOne({ _id: conversationId, participants: userId }).select("participants disappearingSeconds");
 };
 
 export function initSocket(httpServer) {
@@ -52,7 +55,8 @@ export function initSocket(httpServer) {
         const at = new Date();
         await Conversation.updateOne({ _id: conversationId }, { lastMessage: reply._id, $max: { [`lastReadAt.${botId}`]: at } });
         io.to(`user:${userId}`).emit("message:new", reply.toObject());
-        io.to(`user:${userId}`).emit("message:read:update", { conversationId: key, userId: String(botId), at: at.toISOString() });
+        if ((await User.findById(userId).select("settings.readReceipts"))?.settings?.readReceipts !== false)
+          io.to(`user:${userId}`).emit("message:read:update", { conversationId: key, userId: String(botId), at: at.toISOString() });
       } catch {
         console.error("Buddy reply failed");
       } finally {
@@ -76,6 +80,7 @@ export function initSocket(httpServer) {
 
   io.on("connection", (socket) => {
     const userId = socket.user.id;
+    registerMessageActions(io, socket);
     socket.join(`user:${userId}`);
 
     // ----- presence -----
@@ -95,6 +100,11 @@ export function initSocket(httpServer) {
           if (ids.length) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: true });
         }
       });
+      // Re-deliver missed, unacknowledged messages. Clients merge by persisted ID.
+      const permitted = [...await getFriendIds(userId), botId];
+      const conversations = await Conversation.find({ $and: [{ participants: userId }, { participants: { $in: permitted } }] }).select("_id");
+      const pending = await Message.find({ conversation: { $in: conversations.map(c => c._id) }, sender: { $ne: userId }, deliveredAt: null, deletedAt: null, hiddenFor: { $ne: userId }, $and: [notExpired()] }).sort({ createdAt: -1 }).limit(1000);
+      for (const data of await messageViews(pending.reverse(), userId)) if (socket.connected && await canMessage(userId, data.sender)) socket.emit("message:new", data);
     })().catch(() => console.error("Friend presence lookup failed"));
 
     // ----- messaging -----
@@ -122,7 +132,13 @@ export function initSocket(httpServer) {
         const existing = tempId ? await Message.findOne(identity) : null;
         if (image) await requireImageConversation(conversation._id, userId);
         const attachments = image && !existing ? await validateAttachments(payload.attachments, String(conversation._id), userId) : [];
-        const fields = { content, type: image ? "image" : "text", caption, attachments };
+        let replyTo;
+        if (!existing && payload?.replyTo) {
+          if (!mongoose.isValidObjectId(payload.replyTo) || !(await Message.exists({ _id: payload.replyTo, conversation: conversation._id, hiddenFor: { $ne: userId }, deletedAt: null, $and: [notExpired()] })))
+            return reply({ success: false, message: "Reply target is unavailable in this conversation" });
+          replyTo = payload.replyTo;
+        }
+        const fields = { content, type: image ? "image" : "text", caption, attachments, hasMedia: image, ...(conversation.disappearingSeconds ? { expireAt: new Date(Date.now() + conversation.disappearingSeconds * 1000) } : {}), ...(replyTo ? { replyTo } : {}) };
         let message;
         let created = true;
         if (existing) { message = existing; created = false; }
@@ -149,9 +165,14 @@ export function initSocket(httpServer) {
           { lastMessage: message._id }
         );
 
-        const data = message.toObject();
-        const rooms = conversation.participants.map((p) => `user:${p}`);
-        socket.to(rooms).emit("message:new", data); // everyone except this socket
+        if (String(otherId) === String(await ensureBuddy()) && !message.deliveredAt) {
+          message.deliveredAt = new Date(); await Message.updateOne({ _id: message._id, deliveredAt: null }, { deliveredAt: message.deliveredAt });
+        }
+        const data = (await messageViews([message], userId))[0];
+        for (const participant of conversation.participants) {
+          const visible = (await messageViews([message], participant))[0];
+          socket.to(`user:${participant}`).emit("message:new", visible);
+        }
 
         reply({ success: true, message: data, tempId: payload?.tempId });
         try {
@@ -170,6 +191,9 @@ export function initSocket(httpServer) {
       try {
         if (!mongoose.isValidObjectId(payload?.conversationId))
           return reply({ success: false, message: "Invalid conversation id" });
+        const access = await getConversationForUser(payload.conversationId, userId);
+        if (!access || !(await canMessage(userId, access.participants.find(id => String(id) !== userId))))
+          return reply({ success: false, message: "Conversation not found or access denied" });
         // The caller and timestamp always come from the server, never the payload.
         // $max keeps concurrent updates from different tabs monotonic.
         const conversation = await Conversation.findOneAndUpdate(
@@ -183,7 +207,9 @@ export function initSocket(httpServer) {
           at: conversation.lastReadAt.get(userId).toISOString(),
         };
         // Includes the reader's other tabs so badges stay consistent everywhere.
-        io.to(conversation.participants.map((id) => `user:${id}`)).emit("message:read:update", data);
+        const participants = await User.find({ _id: { $in: conversation.participants } }).select("settings.readReceipts");
+        const destinations = participants.some(user => user.settings?.readReceipts === false) ? [`user:${userId}`] : conversation.participants.map(id => `user:${id}`);
+        io.to(destinations).emit("message:read:update", data);
         reply({ success: true, ...data });
       } catch (err) {
         console.error("message:read failed:", err.message);
@@ -229,9 +255,10 @@ export function initSocket(httpServer) {
       if (set.size === 0) {
         onlineUsers.delete(userId);
         announcedOnline.delete(userId);
-        withCurrentFriends(userId, (ids) => {
-          if (ids.length && !onlineUsers.has(userId)) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: false, lastSeen: new Date().toISOString() });
-        }).catch(() => console.error("Friend presence lookup failed"));
+        const lastSeen = new Date();
+        User.updateOne({ _id: userId }, { lastSeenAt: lastSeen }).then(() => withCurrentFriends(userId, (ids) => {
+          if (ids.length && !onlineUsers.has(userId)) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: false, lastSeen: lastSeen.toISOString() });
+        })).catch(() => console.error("Friend presence lookup failed"));
       }
     });
   });

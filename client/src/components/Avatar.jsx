@@ -1,14 +1,18 @@
 import { getInitials } from "../utils/format";
+import { useEffect, useState } from "react";
+import { mediaUrl } from "../services/media";
 
 const sizes = { sm: "h-8 w-8 text-xs", md: "h-10 w-10 text-sm", lg: "h-12 w-12 text-base" };
 
-export default function Avatar({ name, size = "md", online }) {
+export default function Avatar({ name, avatar, size = "md", online }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => { let canceled = false; setUrl(""); if (avatar?.thumbKey) mediaUrl(avatar.thumbKey).then(value => { if (!canceled) setUrl(value); }).catch(() => {}); return () => { canceled = true; }; }, [avatar?.thumbKey]);
   return (
     <div className="relative shrink-0">
       <div
         className={`brand-gradient flex items-center justify-center rounded-full font-semibold text-on-primary ${sizes[size]}`}
       >
-        {getInitials(name)}
+        {url ? <img src={url} alt={`Avatar of ${name}`} onError={() => setUrl("")} className="h-full w-full rounded-full object-cover" /> : getInitials(name)}
       </div>
       {online !== undefined && (
         <span

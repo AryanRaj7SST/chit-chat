@@ -10,6 +10,14 @@ const nameA = `E2E A ${run.slice(0, 8)}`;
 const nameB = `E2E B ${run.slice(0, 8)}`;
 const browser = await chromium.launch();
 const contextA = await browser.newContext();
+await contextA.addInitScript(() => {
+  window.__notificationRequests = 0; window.__notifications = [];
+  window.Notification = class {
+    static permission = "default";
+    static async requestPermission() { window.__notificationRequests++; this.permission = "granted"; return "granted"; }
+    constructor(title, options) { window.__notifications.push({ title, ...options }); }
+  };
+});
 const contextB = await browser.newContext();
 let transportA;
 let holdSendAck = false;
@@ -103,7 +111,7 @@ try {
   await expect(firstBubble.getByLabel("Sent", { exact: true })).toHaveCount(0);
   holdSendAck = false;
   for (const release of heldAcknowledgements.splice(0)) release();
-  await expect(firstBubble.getByLabel("Sent", { exact: true })).toBeVisible();
+  await expect(firstBubble.getByLabel("Delivered", { exact: true })).toBeVisible();
   await pageB.reload();
   await expect(pageB.getByLabel("1 unread messages", { exact: true })).toBeVisible();
   check("unread badge persists across reload; sent check waits for the acknowledgement");
@@ -124,6 +132,49 @@ try {
     await expect(messages(pageA, text)).toHaveCount(1);
   await expect(messages(pageA, "Hello from A").locator("xpath=ancestor::*[@data-message-id]").getByLabel("Read", { exact: true })).toBeVisible();
   check("reply and reload retain each saved message exactly once");
+  expect(await pageA.evaluate(() => window.__notificationRequests)).toBe(0);
+  await pageA.getByRole("button", { name: "Enable notifications", exact: true }).click();
+  expect(await pageA.evaluate(() => window.__notificationRequests)).toBe(1);
+  await send(pageB, "Visible notification control"); await expect(messages(pageA, "Visible notification control")).toBeVisible();
+  expect(await pageA.evaluate(() => window.__notifications.length)).toBe(0);
+  await pageA.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" }); document.dispatchEvent(new Event("visibilitychange")); });
+  await send(pageB, "Secret notification body");
+  await expect.poll(() => pageA.evaluate(() => window.__notifications.length)).toBe(1);
+  expect(await pageA.evaluate(() => window.__notifications[0].body)).toBe("You have a new message.");
+  await pageA.evaluate(async name => { const { default: api } = await import("/src/services/api.js"); const { data } = await api.get("/conversations"); const c = data.conversations.find(item => item.participants.some(user => user.name === name)); await api.patch(`/conversations/${c._id}/settings`, { muted: true }); }, nameB);
+  await send(pageB, "Muted notification control"); await expect(messages(pageA, "Muted notification control")).toBeVisible();
+  await pageA.waitForTimeout(1000); expect(await pageA.evaluate(() => window.__notifications.length)).toBe(1);
+  await pageA.evaluate(async name => { delete document.hidden; delete document.visibilityState; document.dispatchEvent(new Event("visibilitychange")); const { default: api } = await import("/src/services/api.js"); const { data } = await api.get("/conversations"); const c = data.conversations.find(item => item.participants.some(user => user.name === name)); await api.patch(`/conversations/${c._id}/settings`, { muted: false }); }, nameB);
+  check("simulated Notification API requests permission only on click, suppresses visible/muted alerts, and hides message previews");
+  const bubble = (page, text) => messages(page, text).locator("xpath=ancestor::*[@data-message-id]");
+  await bubble(pageA, "Reply from B").hover();
+  await bubble(pageA, "Reply from B").getByRole("button", { name: "Reply to message" }).click();
+  await send(pageA, "Quoted feature reply");
+  await expect(bubble(pageB, "Quoted feature reply").getByRole("button", { name: "Jump to replied message" })).toBeVisible();
+  await bubble(pageA, "Quoted feature reply").getByRole("button", { name: "Jump to replied message" }).click();
+  await expect(bubble(pageA, "Reply from B")).toHaveClass(/message-highlight/);
+  await bubble(pageB, "Quoted feature reply").hover();
+  await bubble(pageB, "Quoted feature reply").getByRole("button", { name: "Message actions" }).click();
+  await bubble(pageB, "Quoted feature reply").getByRole("button", { name: "React 👍", exact: true }).click();
+  await expect(bubble(pageA, "Quoted feature reply").getByRole("button", { name: "React 👍", exact: true })).toBeVisible();
+  await send(pageA, "Editable feature text");
+  await expect(bubble(pageA, "Editable feature text").getByLabel("Read", { exact: true })).toBeVisible();
+  await bubble(pageA, "Editable feature text").hover(); await bubble(pageA, "Editable feature text").getByRole("button", { name: "Message actions" }).click();
+  await bubble(pageA, "Editable feature text").getByRole("button", { name: "Edit message", exact: true }).click();
+  await pageA.getByLabel("Edit message text").fill("Edited feature text"); await pageA.getByRole("button", { name: "Save edit" }).click();
+  await expect(bubble(pageB, "Edited feature text").getByText("edited", { exact: true })).toBeVisible();
+  await bubble(pageB, "Edited feature text").hover(); await bubble(pageB, "Edited feature text").getByRole("button", { name: "Message actions" }).click();
+  await expect(bubble(pageB, "Edited feature text").getByRole("button", { name: "Edit message", exact: true })).toHaveCount(0);
+  await bubble(pageB, "Edited feature text").getByRole("button", { name: "Delete for me", exact: true }).click();
+  await expect(messages(pageB, "Edited feature text")).toHaveCount(0); await expect(messages(pageA, "Edited feature text")).toHaveCount(1);
+  await bubble(pageA, "Edited feature text").hover(); await bubble(pageA, "Edited feature text").getByRole("button", { name: "Message actions" }).click();
+  pageA.once("dialog", dialog => dialog.accept()); await bubble(pageA, "Edited feature text").getByRole("button", { name: "Delete for everyone", exact: true }).click();
+  await expect(pageA.getByText("This message was deleted", { exact: true })).toBeVisible();
+  await pageA.getByRole("button", { name: "Search messages", exact: true }).click(); await pageA.getByLabel("Search in chat").fill("Hello from A");
+  await pageA.getByLabel("Message search results").getByRole("button", { name: "Hello from A", exact: true }).click();
+  await expect(bubble(pageA, "Hello from A")).toHaveClass(/message-highlight/);
+  await pageA.getByRole("button", { name: "Search messages", exact: true }).click();
+  check("live replies, quote jump/highlight, reactions, edit marker, sender-only edit controls, per-user hide, tombstone and chat search");
 
   const png = Buffer.from(await pageA.evaluate(() => {
     const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 800;
@@ -322,6 +373,40 @@ try {
   expect(await pageA.getByRole("button", { name: "Log out" }).evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
   check("sidebar errors retry successfully and keyboard navigation has a visible focus outline");
   await pageA.getByRole("button", { name: "Clear search" }).click();
+  await pageA.evaluate(async () => {
+    const { createSocket } = await import("/src/services/socket.js");
+    const socket = createSocket(localStorage.getItem("chat_token"));
+    await new Promise((resolve, reject) => { socket.once("connect", resolve); socket.once("connect_error", reject); socket.connect(); });
+    const { apiUrl } = await import("/src/services/config.js");
+    const response = await fetch(`${apiUrl}/conversations`, { headers: { Authorization: `Bearer ${localStorage.getItem("chat_token")}` } });
+    const data = await response.json();
+    const conversation = data.conversations.find(item => !item.participants.some(user => user.isBot));
+    try { for (let i = 0; i < 55; i++) await socket.timeout(10000).emitWithAck("message:send", { conversationId: conversation._id, content: `Older-history fixture ${i}`, tempId: `history-${i}` }); }
+    finally { socket.disconnect(); }
+  });
+  await pageA.reload(); await openChat(pageA, nameB);
+  await expect(messages(pageA, "Older-history fixture 54")).toBeVisible();
+  await pageA.getByLabel("Message history").evaluate(el => { el.scrollTop = 0; el.dispatchEvent(new Event("scroll", { bubbles: true })); });
+  await expect(messages(pageA, "Hello from A")).toHaveCount(1);
+  expect(await pageA.getByLabel("Message history").evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  check("older history pages load at the top without duplicates and preserve the viewport anchor");
+  const openOptions = async () => { const summary = pageA.getByLabel("Friend options"); if (!(await summary.evaluate(el => el.parentElement.open))) await summary.click(); };
+  await openOptions(); await pageA.getByRole("button", { name: "Pin chat", exact: true }).click();
+  await expect(pageA.locator("aside").getByText("Pinned", { exact: true })).toBeVisible();
+  await openOptions(); await pageA.getByRole("button", { name: "Mute chat", exact: true }).click();
+  await expect(pageA.locator("aside").getByText("Pinned Muted", { exact: true })).toBeVisible();
+  await openOptions(); await pageA.getByRole("button", { name: "Archive chat", exact: true }).click();
+  await pageA.getByRole("button", { name: "Archived (1)", exact: true }).click(); await openChat(pageA, nameB);
+  await openOptions(); await pageA.getByRole("button", { name: "Unarchive chat", exact: true }).click();
+  await pageA.getByRole("button", { name: "Back to chats", exact: true }).click();
+  await openOptions(); await pageA.getByLabel("Disappearing messages", { exact: true }).selectOption("86400");
+  await expect(pageA.getByText(`${nameA} set disappearing messages to 24 hours`, { exact: true })).toBeVisible();
+  await pageA.getByLabel("Disappearing messages", { exact: true }).selectOption("0");
+  await openOptions(); pageA.once("dialog", dialog => dialog.accept()); await pageA.getByRole("button", { name: "Block user", exact: true }).click();
+  await expect(pageA.getByPlaceholder("Type a message...")).toHaveCount(0);
+  await pageA.getByRole("button", { name: "Blocked people", exact: true }).click(); await expect(pageA.getByRole("button", { name: "Unblock", exact: true })).toBeVisible();
+  await pageA.getByRole("button", { name: "Unblock", exact: true }).click(); await pageA.getByRole("button", { name: "Close blocked list", exact: true }).click();
+  check("pin/mute/archive controls, archived row, timer system notices, and block/unblock UI work");
   await openChat(pageA, "Buddy AI");
   await expect(pageA.getByLabel("Friend options")).toHaveCount(0);
   const botMessages = pageA.locator('[data-message-id]');

@@ -21,12 +21,15 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 ### Implemented optional features
 
 - **Persistent unread counts:** computed on the server from per-participant read positions.
-- **Read receipts:** single check after a send acknowledgement; double check when the other participant's read position reaches that message.
+- **Message ticks:** one check after send acknowledgement, two after the other user's socket acknowledges delivery, violet two after read. Read timestamps honor `settings.readReceipts` (default true); unread counts still work privately.
+- **Message tools:** validated replies with quote jumps/swipe, six reactions, 15-minute text edits, per-user hiding, and sender-only deletion for everyone within 48 hours. Older history loads at the top; in-chat search is literal and membership-protected.
+- **Chat management and profiles:** three explicit pins, per-user mute/archive, an Archived row, blocking/unblocking, name/About edits, private original avatars with 512px thumbnails, and persisted last seen.
+- **Disappearing messages:** Off/1 hour/24 hours/7 days for new messages, system notices, and media-first expiry cleanup. Browser notifications require a click to enable, appear only while the open tab is hidden, respect mute, and hide previews by default.
 - **Theme system:** light/dark toggle on auth pages and in the sidebar; first visit follows the system preference. Semantic CSS tokens, pre-React initialization, and localStorage persistence use Tailwind v4's class-based theme support. See the [theme audit and screenshots](docs/THEME_AUDIT.md).
 - **Photos:** up to ten JPEG/PNG/WebP/GIF files per message, 25 MiB each, uploaded with original bytes intact. Separate thumbnails, captions, progress/cancel/retry, paste/drop, a zoomable viewer, and original downloads use private storage and signed URLs. Buddy refuses photos.
 - **Camera and emoji:** explicit camera capture with cleanup and native-camera fallback; a lazy-loaded themed emoji picker and larger one-to-three-emoji bubbles. Camera automation uses simulated hardware; real devices and production R2 still require manual checks.
 
-There are no group chats, calls, end-to-end encryption, or push notifications. Uploads are limited to supported image formats; HEIC, SVG, HTML, and other attachments are refused. The UI loads the latest 50 messages; the API supports paging, but the UI has no older-history pagination controls. Presence is held in one backend process's memory; multi-instance coordination is not implemented.
+There are no groups, calls, status posts, voice notes, end-to-end encryption, or service-worker push notifications. Uploads are limited to supported image formats; HEIC, SVG, HTML, and other attachments are refused. History initially loads 50 messages and pages older messages as you scroll upward. Presence is held in one backend process's memory; multi-instance coordination is not implemented. The optional full reaction picker is omitted; six reactions are available.
 
 ## Tech stack
 
@@ -131,6 +134,7 @@ All values below are **examples/placeholders**, not working credentials.
 | `R2_ACCESS_KEY_ID` | `<private-access-key-id>` | Bucket-scoped R2 credential; server only |
 | `R2_SECRET_ACCESS_KEY` | `<private-secret-access-key>` | Bucket-scoped R2 credential; server only |
 | `R2_BUCKET` | `<private-bucket-name>` | Private bucket with public access disabled |
+| `MESSAGE_EDIT_WINDOW_MS` | `900000` | Optional development test override; production always enforces 15 minutes |
 
 `MONGO_URI` and `JWT_SECRET` are required at startup. For multiple clients, `CLIENT_URL` can be `http://localhost:5173,https://your-client.vercel.app`. Whitespace and trailing slashes are removed; use exact origins without paths. HTTP and Socket.IO polling share this CORS list. JWT and membership checks apply independently of CORS.
 
@@ -266,7 +270,12 @@ Paths include `/api`. Protected requests require `Authorization: Bearer <token>`
 | DELETE | `/api/friends/:userId` | JWT | Unfriend and retain history; `{ success }`; Buddy cannot be unfriended |
 | GET | `/api/conversations` | JWT | Own friend/Buddy conversations, including empty ones, with participants (including isBot), lastMessage, lastReadAt, unreadCount |
 | POST | `/api/conversations` | JWT | `{ userId }`; get/create accepted-friend or Buddy pair; non-friend 403 "You can only message friends" |
-| GET | `/api/conversations/:id/messages?limit=50&before=<ISO-date>` | JWT + membership | `{ success, messages, hasMore, lastReadAt }`; default 50, limit 1–100, exclusive before date, returned oldest-to-newest |
+| GET | `/api/conversations/:id/messages?limit=50&before=<ISO-date>` | JWT + membership | `{ success, messages, hasMore, lastReadAt }`; default 50, limit 1–100; before also accepts `ISO-date\|messageId` for timestamp ties; `q` performs literal search capped at 30; `around=<messageId>` includes that target and older context |
+| PATCH | `/api/conversations/:id/settings` | JWT + membership + friendship | Boolean `pinned`, `muted`, `archived`; persistent per-user settings, three explicit pins maximum |
+| PATCH | `/api/users/me` | JWT | Own `name`, `about` (140 graphemes), `avatar: { key, thumbKey }`; returns own public profile |
+| GET | `/api/users/blocked` | JWT | Own blocked-user names/IDs only |
+| POST | `/api/users/:id/block` | JWT | Block either direction for messaging/discovery, remove friendship/pending requests; no self/Buddy block |
+| DELETE | `/api/users/:id/block` | JWT | Remove only the caller's block; does not restore friendship |
 
 Registration requires a 2–50 character name, valid email, and password of at least six characters. Public profiles include _id, name, email, createdAt and isBot, never password hashes. Search returns a different privacy-preserving shape; relationship is none, friends, request_sent or request_received. The request limiter is in memory per backend process and resets on restart.
 
@@ -287,6 +296,11 @@ to text. Originals are not processed server-side. The server checks signed
 ownership, key scope, object size/MIME, and magic bytes before persisting. The
 sidebar displays Photo or Photo: caption. Text and caption limits count Unicode
 grapheme clusters, with additional byte bounds against oversized payloads.
+
+Avatar signing reuses `/api/uploads/sign` with kind `avatar-original` or
+`avatar-thumb`; keys use an authenticated-owner `u/<userId>/...` namespace.
+Thumbnail dimensions must fit within 512px. Avatar media remains authenticated
+and is unavailable across a block. Chat image keys keep their original c/ format.
 
 ## Socket.IO contract
 
@@ -315,6 +329,40 @@ Send acknowledgement: `{ success: true, message, tempId }` or `{ success: false,
 Built-in client events are `connect`, `disconnect`, and `connect_error`. Rejected handshakes produce `connect_error` with message `Authentication error`. Presence `lastSeen` is transient, not a saved profile field. The app marks a visible, successfully loaded chat as read when opened, when messages arrive, and when visibility/connection returns.
 
 ## Commands and testing
+
+Additional message socket contracts (all client actions check authenticated
+identity, conversation membership, and current friendship):
+
+| Event | Direction | Payload/behavior |
+| --- | --- | --- |
+| `message:delivered` | Client → server | `{ messageId }`; recipient-only durable delivery acknowledgement |
+| `message:delivery:update` | Server → participant rooms | `{ conversationId, messageId, at }` |
+| `message:react` | Client → server | `{ messageId, emoji }`; six allowed emojis, or null to remove; one per caller |
+| `message:react:update` | Server → participant rooms | Updated message object, serialized per viewer |
+| `message:edit` | Client → server | `{ messageId, content }`; own text within 15 minutes |
+| `message:edit:update` | Server → participant rooms | Updated message with editedAt/revision |
+| `message:delete` | Client → server | `{ messageId, forEveryone }`; false hides only for the caller, true deletes own message within 48 hours |
+| `message:delete:update` | Server → appropriate rooms | Updated tombstone, or `{ _id, conversation, hidden: true }` to caller tabs, or `{ _id, conversation, expired: true }` for expiry |
+| `conversation:timer` | Client → server | `{ conversationId, seconds }`; 0, 3600, 86400, 604800 |
+| `conversation:timer:update` | Server → participant rooms | `{ conversationId, seconds }` |
+| `conversation:settings:update` | Server → caller's tabs | `{ conversationId, settings }` after the authorized REST update |
+
+Text/image sends additionally accept `replyTo: <messageId>`; responses expand it
+to `{ _id, sender?, preview }` without exposing a hidden/deleted/expired original.
+Saved messages carry deliveredAt, editedAt, deletedAt, reactions, revision,
+expireAt and hasMedia. hiddenFor is internal and omitted from responses. Buddy
+supports delivery/read/replies and delete-for-me, while reactions, edits,
+delete-for-everyone and timers are refused. Deleted messages are displayed
+as a tombstone rather than an image/caption preview.
+
+Mongo's TTL index applies only to media-free documents. A five-minute sweeper
+deletes media objects before their expired documents; a failed deletion retains
+the document for retry. The running client and REST hide messages at expireAt.
+Render sleep/outages can delay physical media cleanup until the server wakes;
+see [TESTING.md](docs/TESTING.md) for the exact guarantees and manual checks.
+The settings UI planned for Phase 5.9 is not added here: readReceipts and
+hidePreviews are designed now, with true defaults. Notifications are for a hidden
+open tab, not a closed browser or mobile push service.
 
 Every script below is defined in that directory's `package.json`.
 

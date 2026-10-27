@@ -390,3 +390,140 @@ Recorded local command output for this phase:
 - Lint exited 0 with React context-export, effect-state, ref-cleanup, and compiler
   optimization/purity warnings. Camera/photo effects add synchronization warnings;
   these are not presented as a warning-free lint run.
+
+## Message features (Phase 5.7)
+
+All eleven priority areas are implemented. The optional full reaction picker is
+omitted; reactions use 👍 ❤️ 😂 😮 😢 🙏. No calls, status posts, groups, voice
+notes, or service-worker push service were added. Phase 5.9's privacy settings UI
+is intentionally not included: settings.readReceipts and settings.hidePreviews
+exist now and default to true.
+
+Behavior and contracts:
+
+- One tick means the sender's acknowledgement arrived. Two neutral ticks mean
+  the other participant's socket acknowledged message:delivered; violet ticks
+  mean read. Delivery is persisted separately from read and remains monotonic
+  through delayed acks/history. On reconnect, up to 1,000 undelivered messages
+  are replayed with their persisted IDs for client deduplication. Private reads
+  still update the reader's own unread count but do not expose their timestamps
+  through REST or emit them to the other participant.
+- replyTo is a same-conversation reference, never trusted client quote text.
+  Replies to hidden/deleted/expired messages are unavailable. Quotes jump to and
+  highlight a loaded original, fetching context if necessary. Touch uses a
+  rightward swipe; desktop has hover/focus action controls.
+- Reactions are updated atomically with one entry per user. Edit/delete actions
+  use the authenticated sender and database timestamps, not payload identities.
+  Text edits are limited to 15 minutes; delete-for-everyone to 48 hours. Hidden
+  messages are filtered from the caller's history/search/previews/unread counts
+  and hiddenFor is never serialized. Tombstones clear text/caption/media. Media
+  deletion errors leave the message retryable rather than silently claiming
+  successful removal; already downloaded copies cannot be recalled.
+- History supports the original ISO before cursor plus ISO|messageId for ties.
+  Older pages restore scroll height/position and merge by ID. q is a literal,
+  escaped, case-insensitive content/caption search capped at 30; around returns
+  the exact authorized target and older context. Deleted/hidden/expired messages
+  are excluded. Search has no global directory or cross-conversation scope.
+- ConversationSettings has one document per user with per-conversation pin,
+  mute, and archive fields. An atomic update enforces three explicit pins even
+  across instances. Buddy's existing first-row treatment is independent of
+  explicit pins. Muted conversations retain unread badges but suppress browser
+  notifications. Archived conversations appear under Archived.
+- A directional Block record is enforced both ways for discovery, friend
+  requests, sending, typing, message actions, and uploads. Blocking deletes the
+  friendship/pending request and closes open chats on both sides. Unblocking
+  removes only the caller's block and does not restore friendship. Saved history
+  remains membership-readable. Signed URLs already issued remain short-lived
+  bearer capabilities; they are not a mechanism for recalling downloaded data.
+- Own profile updates accept name, About (140 graphemes), and validated avatar
+  keys in u/<ownerId>/... storage. The original is retained unchanged; a separate
+  thumbnail fits within 512px. Last seen is stored only after the final socket
+  disconnects, with reconnect/presence checks preventing stale offline events.
+- Disappearing timers apply to NEW messages only: Off, 1 hour, 24 hours, 7 days.
+  Both current friends can change a timer and get a system notice. Text-only
+  documents have a partial Mongo TTL index. Media documents are excluded from
+  TTL so their keys cannot be lost before cleanup. A startup/five-minute sweep
+  removes original/thumbnail objects first, then documents; on failure it keeps
+  documents for retry. It handles at most 1,000 records per sweep. REST and the
+  open chat hide expired messages immediately; physical cleanup can lag by a
+  sweep interval, storage failure, or a sleeping/stopped Render service. Existing
+  live references to a shared legacy object prevent premature byte deletion.
+- Browser notifications are enabled only through the user's button click. They
+  are generated only while the open tab is hidden, honor mute/read state, and
+  default to a generic body without sender/content previews. They do not work
+  as closed-browser/mobile push. Camera and notification automation both use
+  simulated browser facilities, not real hardware/OS notifications.
+- Buddy supports ticks/replies and delete-for-me, but refuses reactions, edits,
+  delete-for-everyone, timers, and blocking. Its existing image refusal remains.
+
+Automated coverage:
+
+- Server `npm run verify` covers recipient-only delivery acknowledgements;
+  same/foreign-conversation replies; outsider, invalid, concurrent, and removed
+  reactions; non-sender/late edits/deletes; hidden-view isolation; literal search
+  and outsider search; private read REST/event suppression; media deletion;
+  per-user settings and pin cap; profile/About/avatar owner validation;
+  timer permissions/options/notices; timestamp assignment; expired URL denial;
+  TTL's media exclusion; cleanup failure/retry and physical object removal;
+  blocking requests/messages/actions/uploads/search/avatar access; unblock
+  isolation; and a new last-seen timestamp after final disconnect.
+- Local-only helpers mutate timestamps/privacy only for IDs registered/created
+  by that test run. They also check equal-timestamp cursors and target jumps.
+  Remote BASE_URL runs print explicit SKIP lines for fixture mutation/physical
+  storage inspection. Production never honors MESSAGE_EDIT_WINDOW_MS; it always
+  uses 15 minutes. The override is development-only.
+- Client unit tests check that newer revisions and delivery timestamps survive
+  stale history, delayed send acknowledgements still clear pending state, and
+  equal-timestamp pages retain persisted-ID order.
+- Two-browser tests cover delivered/read/ack behavior, live replies/reactions/
+  edits/deletes, quote highlights, literal search, anchored older history,
+  pin/mute/archive controls, timer notices, and block/unblock navigation, alongside
+  existing uploads/Buddy/theme/presence/mobile regressions. Notification tests
+  mock only the Notification API and visibility; they check no automatic prompt,
+  no visible-tab alert, generic private bodies, and mute suppression.
+- The media UI suite additionally saves a name/About/avatar, reloads the profile,
+  and verifies the rendered thumbnail's natural width is 512px. Simulated camera
+  lifecycle and emoji/touch checks still run.
+
+Manual checks still required:
+
+- [ ] Test real OS notification permission/denial and hidden-tab delivery on
+  HTTPS, including browser notification settings and unsupported mobile browsers.
+  Check both hidePreviews values once Phase 5.9 exposes its settings UI.
+- [ ] On two real phones, swipe to reply without interfering with vertical
+  scroll, jump to old originals, react, and check focus/menus at 320px.
+- [ ] Open two tabs for one user: hide/edit/delete in one while the other is
+  loading history or awaiting a send ack. Confirm no stale snapshot restores
+  deleted content and that the final tab controls last seen.
+- [ ] On R2, delete an image for everyone and expire an image; verify BOTH keys
+  are gone. Exercise storage permission/network failure and subsequent retry.
+  No real R2 credentials, deployed endpoints, or storage outage were exercised.
+- [ ] Observe a real 1-hour timer and Mongo's asynchronous text TTL monitor.
+  Automation time-travels fixtures and invokes the sweeper directly; it does
+  not wait an hour/five minutes or verify Render's sleeping-service behavior.
+- [ ] Check profile avatar orientation/quality and Safari/Firefox rendering.
+  Avatar/name changes on another user's already-open profile refresh on reload.
+- [ ] Review abandoned c/ AND u/ uploads operationally. Reconcile Message
+  attachment references AND User.avatar key/thumbKey references before deleting
+  unused objects. Do not apply a blanket age-based deletion policy to either
+  prefix; non-expiring messages and avatars must remain.
+
+Final local command evidence:
+
+- Server `npm run verify`: `All checks passed`, including
+  `PASS - failed media cleanup preserves the expired document for retry`,
+  `PASS - expired media bytes are physically removed`, and
+  `PASS - private read updates are not emitted to the other participant`.
+- Client `npm run build`: `✓ built in 1.18s`.
+- Client `npm test`: `tests 13`, `pass 13`, `fail 0`; server `npm test`:
+  `tests 6`, `pass 6`, `fail 0`.
+- `npm run test:kb`: `Total: 242 entries. All knowledge-base checks passed`.
+- Client `npm run e2e`: `All browser checks passed` with all message/chat controls,
+  simulated Notification API privacy/mute checks, and earlier regression coverage.
+- Client `npm run test:media`: `All media UI checks passed`, including the 512px
+  avatar test and simulated-camera/touch coverage. The viewport assertion waits
+  for visualViewport resize to settle before measuring the composer.
+- Lint exited 0 with React context/effect, ref cleanup, and compiler optimization/
+  purity warnings; this is not a warning-free lint run.
+
+These results are local development evidence, not a production deployment.

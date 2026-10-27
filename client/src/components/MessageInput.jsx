@@ -8,7 +8,7 @@ import CameraModal from "./CameraModal";
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
 const touchDevice = () => window.matchMedia("(pointer: coarse)").matches;
 
-export default function MessageInput({ onSend, onTyping, onStopTyping, images }) {
+export default function MessageInput({ onSend, onTyping, onStopTyping, images, reply, onCancelReply }) {
   const [text, setText] = useState(""), [caption, setCaption] = useState("");
   const [emoji, setEmoji] = useState(false), [attach, setAttach] = useState(false), [camera, setCamera] = useState(false);
   const { resolvedTheme } = useTheme();
@@ -50,6 +50,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, images })
     if (files.length) { event.preventDefault(); void images.addFiles(files); }
   }}>
     {images.error && <p role="alert" className="mb-2 text-sm text-danger-ink">{images.error}</p>}
+    {reply && <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border-l-4 border-primary bg-surface-2 px-3 py-1 text-sm text-text"><span className="min-w-0 flex-1 truncate">Replying to: {reply.deletedAt ? "This message was deleted" : reply.type === "image" ? `Photo: ${reply.caption || ""}` : reply.content}</span><button type="button" className="media-control" aria-label="Cancel reply" onClick={onCancelReply}>×</button></div>}
     {images.preparing && <p role="status" className="mb-2 text-sm text-muted">Preparing photo previews…</p>}
     {images.drafts.length > 0 && <div className="mb-2 min-w-0 rounded-xl border border-border bg-surface-2 p-2">
       <p className="mb-1 text-xs font-medium text-text">Original quality · {images.drafts.length}/10</p>

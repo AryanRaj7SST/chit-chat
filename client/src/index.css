@@ -87,6 +87,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 ui-s
 }
 .app-shell, .auth-shell { background: radial-gradient(ellipse at top left, color-mix(in srgb, var(--primary) 12%, transparent), transparent 55%), var(--bg); }
 .panel { box-shadow: var(--panel-shadow); }
+.message-highlight { border-radius: 1rem; outline: 2px solid var(--primary); outline-offset: 3px; }
 .app-shell { height: var(--app-height, 100dvh); padding-top: env(safe-area-inset-top); }
 .composer { padding-bottom: max(.5rem, env(safe-area-inset-bottom)); }
 .composer-button { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; color: var(--muted); }

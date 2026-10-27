@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { prepareImage, uploadImage } from "../services/media";
 import { getErrorMessage } from "../services/api";
 
-export function useImageSharing({ conversationId, isBot, create, update, deliver }) {
+export function useImageSharing({ conversationId, isBot, create, update, deliver, replyTo }) {
   const [drafts, setDrafts] = useState([]);
   const [error, setError] = useState("");
   const [preparingPreview, setPreparingPreview] = useState(false);
@@ -57,7 +57,7 @@ export function useImageSharing({ conversationId, isBot, create, update, deliver
         attachments.push({ key, thumbKey, ...dimensions });
       }
       if (!alive.current || job.controller.signal.aborted) return;
-      job.uploaded = { type: "image", attachments, caption: job.caption };
+      job.uploaded = { type: "image", attachments, caption: job.caption, ...(job.replyTo ? { replyTo: job.replyTo } : {}) };
       update(job.id, { attachments: attachments.map((a, i) => ({ ...a, localUrl: job.files[i].localUrl, mime: job.files[i].mime })), uploading: false });
       deliver(job.id, job.uploaded);
     } catch (err) {
@@ -69,7 +69,7 @@ export function useImageSharing({ conversationId, isBot, create, update, deliver
   const send = caption => {
     const files = [...currentDrafts.current]; if (!files.length) return;
     const id = `tmp-${crypto.randomUUID()}`;
-    const job = { id, files, caption, progress: files.map(() => 0) };
+    const job = { id, files, caption, replyTo, progress: files.map(() => 0) };
     jobs.current.set(id, job); change([]);
     create(id, { type: "image", content: "", caption, uploading: true, progress: job.progress,
       attachments: files.map(item => ({ localUrl: item.localUrl, width: item.width, height: item.height, mime: item.mime })) });

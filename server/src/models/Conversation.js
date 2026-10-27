@@ -10,6 +10,7 @@ const conversationSchema = new mongoose.Schema(
     participantsKey: { type: String, required: true, unique: true },
     lastMessage: { type: mongoose.Schema.Types.ObjectId, ref: "Message", default: null },
     lastReadAt: { type: Map, of: Date, default: () => ({}) },
+    disappearingSeconds: { type: Number, enum: [0, 3600, 86400, 604800], default: 0 },
   },
   { timestamps: true, toJSON: { flattenMaps: true } }
 );

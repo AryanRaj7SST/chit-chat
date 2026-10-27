@@ -4,6 +4,9 @@ import Avatar from "./Avatar";
 import { ListSkeleton } from "./Skeletons";
 import { formatListTime, getOther } from "../utils/format";
 import ThemeToggle from "./ThemeToggle";
+import api, { getErrorMessage } from "../services/api";
+import toast from "react-hot-toast";
+import ProfileModal from "./ProfileModal";
 
 const actionClass = "rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-primary-ink transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted";
 
@@ -12,12 +15,16 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
   usersLoading, convsLoading, convsError, usersError, onRetryConversations, onRetryUsers,
   onlineIds, query, onQueryChange, onLogout }) {
   const [tab, setTab] = useState("chats");
+  const [archived, setArchived] = useState(false), [blocked, setBlocked] = useState(null);
+  const [profile, setProfile] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() => "Notification" in window ? Notification.permission : "unsupported");
   const searching = query.trim().length >= 2;
   const entries = conversations.map((conversation) => ({ user: getOther(conversation, me._id), conversation })).filter((entry) => entry.user);
   const existing = new Set(entries.map((entry) => entry.user._id));
   for (const user of friends) if (!existing.has(user._id)) entries.push({ user });
   entries.sort((a, b) => {
     if (!!a.user.isBot !== !!b.user.isBot) return a.user.isBot ? -1 : 1;
+    if (!!a.conversation?.settings?.pinned !== !!b.conversation?.settings?.pinned) return a.conversation?.settings?.pinned ? -1 : 1;
     const timeA = a.conversation?.lastMessage?.createdAt;
     const timeB = b.conversation?.lastMessage?.createdAt;
     if (timeA || timeB) return new Date(timeB || 0) - new Date(timeA || 0);
@@ -44,6 +51,8 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-3">
+        {!searching && tab === "chats" && <button className="mx-3 mb-2 rounded-lg px-3 text-sm text-primary-ink" onClick={() => setArchived(value => !value)}>{archived ? "Back to chats" : `Archived (${conversations.filter(c => c.settings?.archived).length})`}</button>}
+        {!searching && tab === "chats" && archived && !conversations.some(c => c.settings?.archived) && <p className="px-4 text-sm text-muted">No archived chats.</p>}
         {socialError && retryState(socialError, onRetrySocial, "Retry friend requests")}
         {searching ? (
           usersLoading ? <ListSkeleton rows={3} /> : usersError ? retryState(usersError, onRetryUsers, "Retry search") : users.length === 0 ? <p className="px-4 py-3 text-sm text-muted">No users match your search.</p> :
@@ -67,22 +76,30 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
               </div>)}
             </section>)}
           </div>
-        ) : convsLoading ? <ListSkeleton rows={3} /> : convsError ? retryState(convsError, onRetryConversations, "Retry conversations") : entries.length === 0 ? <p className="px-4 py-3 text-sm text-muted">Your chats are loading. Search for a friend to get started.</p> : entries.map(({ user, conversation }) => {
+        ) : convsLoading ? <ListSkeleton rows={3} /> : convsError ? retryState(convsError, onRetryConversations, "Retry conversations") : entries.length === 0 ? <p className="px-4 py-3 text-sm text-muted">Your chats are loading. Search for a friend to get started.</p> : entries.filter(entry => !!entry.conversation?.settings?.archived === archived).map(({ user, conversation }) => {
           const last = conversation?.lastMessage;
           const count = conversation?.unreadCount || 0;
           return <button key={user._id} onClick={() => conversation ? onSelectConversation(conversation) : onSelectUser(user)} className={`mx-2 my-1 flex w-[calc(100%_-_1rem)] items-center gap-3 rounded-xl border-l-[3px] px-3 py-3 text-left transition-colors duration-150 hover:bg-surface-2 ${conversation && activeId === conversation._id ? "border-l-primary bg-active" : "border-l-transparent"}`}>
-            <Avatar name={user.name} online={user.isBot || onlineIds.has(user._id)} />
+            <Avatar name={user.name} avatar={user.avatar} online={user.isBot || onlineIds.has(user._id)} />
             <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-base font-semibold">{user.name}</span>{user.isBot && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary-ink">Bot</span>}{last && <span className="shrink-0 text-xs text-muted">{formatListTime(last.createdAt)}</span>}</div>
-              <div className="flex items-center justify-between gap-2"><span className={`truncate text-sm ${count ? "font-medium text-text " : "text-muted "}`}>{last ? `${last.sender === me._id ? "You: " : ""}${last.type === "image" ? `Photo${last.caption ? `: ${last.caption}` : ""}` : last.content}` : "No messages yet"}</span>{count > 0 && <span aria-label={`${count} unread messages`} className="flex h-5 min-w-5 shrink-0 items-center justify-center brand-gradient rounded-full px-1.5 text-xs font-semibold text-on-primary">{count}</span>}</div>
+              {(conversation?.settings?.pinned || conversation?.settings?.muted) && <span className="text-[11px] text-muted">{conversation.settings.pinned ? "Pinned " : ""}{conversation.settings.muted ? "Muted" : ""}</span>}
+              <div className="flex items-center justify-between gap-2"><span className={`truncate text-sm ${count ? "font-medium text-text " : "text-muted "}`}>{last ? `${last.sender === me._id ? "You: " : ""}${last.deletedAt ? "This message was deleted" : last.type === "image" ? `Photo${last.caption ? `: ${last.caption}` : ""}` : last.content}` : "No messages yet"}</span>{count > 0 && <span aria-label={`${count} unread messages`} className="flex h-5 min-w-5 shrink-0 items-center justify-center brand-gradient rounded-full px-1.5 text-xs font-semibold text-on-primary">{count}</span>}</div>
             </div>
           </button>;
         })}
       </div>
       <div className="flex items-center gap-3 border-t border-border p-3">
-        <Avatar name={me.name} /><div className="min-w-0 flex-1"><p className="truncate text-base font-semibold">{me.name}</p><p className="truncate text-xs text-muted">{me.email}</p></div>
+        <button aria-label="Edit profile" onClick={() => setProfile(true)}><Avatar name={me.name} avatar={me.avatar} /></button><div className="min-w-0 flex-1"><p className="truncate text-base font-semibold">{me.name}</p><p className="truncate text-xs text-muted">{me.email}</p></div>
         <ThemeToggle />
         <button onClick={onLogout} aria-label="Log out" className="rounded-lg p-2 text-muted hover:bg-surface-2"><LogOut className="h-4 w-4" /></button>
       </div>
+      <button className="border-t border-border px-4 text-left text-xs text-muted" onClick={async () => { try { const { data } = await api.get("/users/blocked"); setBlocked(data.users); } catch (error) { toast.error(getErrorMessage(error)); } }}>Blocked people</button>
+      <button className="border-t border-border px-4 text-left text-xs text-muted" disabled={notificationPermission === "unsupported" || notificationPermission === "granted"} onClick={async () => {
+        try { const permission = await Notification.requestPermission(); setNotificationPermission(permission); if (permission !== "granted") toast.error("Notifications are blocked. Change this in your browser's site settings."); }
+        catch { toast.error("Notifications need HTTPS and browser support."); }
+      }}>{notificationPermission === "granted" ? "Notifications enabled" : notificationPermission === "unsupported" ? "Notifications unavailable" : "Enable notifications"}</button>
+      {blocked && <div className="max-h-44 overflow-y-auto border-t border-border p-3 text-sm"><button className="media-control" onClick={() => setBlocked(null)}>Close blocked list</button>{blocked.length ? blocked.map(person => <div key={person._id} className="flex items-center justify-between gap-2"><span className="truncate">{person.name}</span><button className="media-control" onClick={async () => { try { await api.delete(`/users/${person._id}/block`); setBlocked(previous => previous?.filter(item => item._id !== person._id) || null); } catch (error) { toast.error(getErrorMessage(error)); } }}>Unblock</button></div>) : <p>No blocked people.</p>}</div>}
+      {profile && <ProfileModal onClose={() => setProfile(false)} />}
     </aside>
   );
 }

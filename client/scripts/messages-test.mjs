@@ -7,6 +7,20 @@ const optimistic = { _id: "tmp-1", tempId: "tmp-1", sender: "a", content: "hello
 const saved = { ...optimistic, _id: "saved-1", status: undefined };
 const reply = { _id: "saved-2", sender: "b", content: "reply", createdAt: "2026-01-01T00:00:01Z" };
 
+test("stale snapshots cannot undo edits/deletes or delivery acknowledgements", () => {
+  const edited = { ...saved, content: "edited", revision: 2, deliveredAt: "2026-01-01T00:00:02Z" };
+  assert.equal(mergeMessages([edited], [{ ...saved, revision: 0 }])[0].content, "edited");
+  assert.equal(mergeMessages([edited], [{ ...edited, deliveredAt: null }])[0].deliveredAt, edited.deliveredAt);
+  const deleted = { ...edited, content: "", deletedAt: "2026-01-01T00:00:03Z", revision: 3 };
+  assert.equal(mergeMessages([deleted], [edited])[0].content, "");
+  assert.equal(mergeMessages([{ ...deleted, status: "sending" }], [{ ...saved, status: "sent" }])[0].status, "sent");
+});
+test("equal timestamps retain persisted ID order across history pages", () => {
+  const high = { ...saved, _id: "000000000000000000000002", tempId: undefined };
+  const low = { ...saved, _id: "000000000000000000000001", tempId: undefined };
+  assert.deepEqual(mergeMessages([high], [low]).map(message => message._id), [low._id, high._id]);
+});
+
 test("history before ack reconciles the optimistic message without duplicates", () => {
   const history = mergeMessages([optimistic], [saved]);
   assert.equal(history[0].status, "sending");

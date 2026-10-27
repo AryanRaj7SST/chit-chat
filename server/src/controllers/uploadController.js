@@ -4,11 +4,12 @@ import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import Upload from "../models/Upload.js";
 import User from "../models/User.js";
-import { canMessage } from "../utils/friendship.js";
+import { notExpired } from "../utils/messageView.js";
+import { canMessage, isBlocked } from "../utils/friendship.js";
 import HttpError from "../utils/HttpError.js";
 import { getStorage } from "../storage/index.js";
 import { local, verifyLocalToken } from "../storage/local.js";
-import { MAX_ORIGINAL, MAX_THUMB, MIME_EXT, imageMime, parseKey } from "../storage/policy.js";
+import { MAX_ORIGINAL, MAX_THUMB, MIME_EXT, imageMime, parseKey, parseAvatarKey } from "../storage/policy.js";
 
 const limits = new Map();
 export const validDimension = value => Number.isInteger(value) && value > 0 && value <= 100000;
@@ -29,12 +30,14 @@ export async function signUpload(req, res) {
   if (++count.attempts > 30) throw new HttpError(429, "Too many uploads. Try again in ten minutes.");
   limits.set(user, count);
   const { conversationId, kind, mime, size, width, height } = req.body || {};
-  await requireImageConversation(conversationId, user);
-  if (!["original", "thumb"].includes(kind) || !Object.hasOwn(MIME_EXT, mime || "")) throw new HttpError(400, "Only JPEG, PNG, WebP, and GIF images are supported");
-  if (!Number.isInteger(size) || size <= 0 || size > (kind === "thumb" ? MAX_THUMB : MAX_ORIGINAL)) throw new HttpError(400, "Image exceeds the upload size limit");
+  const avatar = ["avatar-original", "avatar-thumb"].includes(kind);
+  if (!avatar) await requireImageConversation(conversationId, user);
+  if (!["original", "thumb", "avatar-original", "avatar-thumb"].includes(kind) || !Object.hasOwn(MIME_EXT, mime || "")) throw new HttpError(400, "Only JPEG, PNG, WebP, and GIF images are supported");
+  if (!Number.isInteger(size) || size <= 0 || size > (kind.endsWith("thumb") ? MAX_THUMB : MAX_ORIGINAL)) throw new HttpError(400, "Image exceeds the upload size limit");
   if ([width, height].some(value => value !== undefined && !validDimension(value))) throw new HttpError(400, "Invalid image dimensions");
-  const key = `c/${String(conversationId).toLowerCase()}/${randomUUID()}.${MIME_EXT[mime]}`;
-  await Upload.create({ key, user, conversation: conversationId, kind, mime, size, width, height, expiresAt: new Date(now + 3600000) });
+  if (kind === "avatar-thumb" && (!validDimension(width) || !validDimension(height) || width > 512 || height > 512)) throw new HttpError(400, "Avatar thumbnails must fit within 512px");
+  const key = `${avatar ? `u/${user}` : `c/${String(conversationId).toLowerCase()}`}/${randomUUID()}.${MIME_EXT[mime]}`;
+  await Upload.create({ key, user, ...(!avatar ? { conversation: conversationId } : {}), kind, mime, size, width, height, expiresAt: new Date(now + 3600000) });
   const upload = await getStorage().createUploadUrl({ key, mime, size });
   res.json({ key, upload });
 }
@@ -44,7 +47,7 @@ export async function localPut(req, res) {
   try { claims = verifyLocalToken(req.params.token, "upload"); } catch { throw new HttpError(401, "Upload link expired or invalid"); }
   const signed = await Upload.findOne({ key: claims.key, user: req.user._id, claim: { $exists: false }, expiresAt: { $gt: new Date() } });
   if (!signed) throw new HttpError(403, "Upload access denied");
-  await requireImageConversation(signed.conversation, req.user._id);
+  if (signed.conversation) await requireImageConversation(signed.conversation, req.user._id);
   if (!Buffer.isBuffer(req.body) || req.body.length !== claims.size || req.get("Content-Type") !== claims.mime) throw new HttpError(400, "Upload size or type does not match");
   try { await local.put(claims.key, req.body); }
   catch (error) { if (error.code === "EEXIST") throw new HttpError(412, "Upload already exists; request a fresh upload link to retry"); throw new HttpError(500, "Upload failed"); }
@@ -61,10 +64,16 @@ export async function localGet(req, res) {
 }
 export async function mediaUrl(req, res) {
   const key = req.query.key, parsed = parseKey(key);
+  const avatar = parseAvatarKey(key);
+  if (avatar) {
+    if (await isBlocked(req.user._id, avatar[1])) throw new HttpError(403, "Profile access denied");
+    if (!(await User.exists({ _id: avatar[1], $or: [{ "avatar.key": key }, { "avatar.thumbKey": key }] }))) throw new HttpError(404, "Photo not found");
+    return res.set("Cache-Control", "private, no-store").json({ url: await getStorage().createDownloadUrl(key, 60) });
+  }
   if (!parsed) throw new HttpError(400, "Invalid media key");
   if (!(await Conversation.exists({ _id: parsed[1], participants: req.user._id }))) throw new HttpError(403, "Conversation access denied");
   // Unvalidated, pending uploads must never become downloadable chat media.
-  if (!(await Message.exists({ conversation: parsed[1], $or: [{ "attachments.key": key }, { "attachments.thumbKey": key }] }))) throw new HttpError(404, "Photo not found");
+  if (!(await Message.exists({ conversation: parsed[1], deletedAt: null, $and: [notExpired()], $or: [{ "attachments.key": key }, { "attachments.thumbKey": key }] }))) throw new HttpError(404, "Photo not found");
   res.set("Cache-Control", "private, no-store").json({ url: await getStorage().createDownloadUrl(key, 60) });
 }
 

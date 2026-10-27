@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import { characterCount } from "../utils/validators.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -7,6 +8,10 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: [true, "Email is required"], unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
     isBot: { type: Boolean, default: false },
+    settings: { readReceipts: { type: Boolean, default: true }, hidePreviews: { type: Boolean, default: true } },
+    about: { type: String, default: "", validate: value => characterCount(value) <= 140 },
+    avatar: { key: String, thumbKey: String, mime: String, size: Number, width: Number, height: Number },
+    lastSeenAt: { type: Date, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
@@ -23,7 +28,7 @@ userSchema.methods.matchPassword = function (plain) {
 };
 
 userSchema.methods.toPublic = function () {
-  return { _id: this._id, name: this.name, email: this.email, createdAt: this.createdAt, isBot: this.isBot };
+  return { _id: this._id, name: this.name, email: this.email, createdAt: this.createdAt, isBot: this.isBot, settings: this.settings, about: this.about, avatar: this.avatar, lastSeenAt: this.lastSeenAt };
 };
 
 export default mongoose.model("User", userSchema);

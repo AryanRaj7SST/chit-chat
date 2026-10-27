@@ -149,6 +149,9 @@ export default function ChatPage() {
     socket.on("friend:accepted", onAccepted);
     socket.on("friend:removed", onRemoved);
     socket.on("friend:request:removed", onRequestRemoved);
+    for (const event of ["message:edit:update", "message:delete:update"]) socket.on(event, onRead);
+    socket.on("conversation:settings:update", onRead);
+    socket.on("conversation:timer:update", onRead);
     return () => {
       socket.off("message:new", onNew);
       socket.off("connect", onConnect);
@@ -157,6 +160,9 @@ export default function ChatPage() {
       socket.off("friend:accepted", onAccepted);
       socket.off("friend:removed", onRemoved);
       socket.off("friend:request:removed", onRequestRemoved);
+      for (const event of ["message:edit:update", "message:delete:update"]) socket.off(event, onRead);
+      socket.off("conversation:settings:update", onRead);
+      socket.off("conversation:timer:update", onRead);
     };
   }, [socket, user._id, loadConversations, loadSocial]);
 

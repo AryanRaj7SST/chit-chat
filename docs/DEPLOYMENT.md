@@ -269,6 +269,26 @@ cannot be decoded/generated. Camera captures are new JPEG files at the browser's
 reported capture resolution and quality 0.95; originals chosen from disk/native
 camera are not recompressed by the app.
 
+Phase 5.7 also stores private avatars under u/<userId>/... in the same bucket.
+No additional R2 credentials or public access are needed. Operational orphan
+cleanup must check User.avatar.key/thumbKey as well as Message attachments.
+
+Startup builds the Message expiry indexes. Keep the TTL index partial with
+hasMedia=false; do not replace it with an unconditional TTL on expireAt. The
+server sweeper must retain media documents until their object deletions succeed,
+then remove the documents. It runs on startup and every five minutes while the
+backend is awake. Render sleep or an outage can delay physical byte deletion;
+REST and the client still hide expired messages at their deadline. Mongo TTL
+deletion itself is asynchronous, as described in the
+[MongoDB TTL reference](https://www.mongodb.com/docs/manual/core/index-ttl/).
+The separate compound expiry index supports sweeper lookups. Check startup/index
+creation errors before deploying against an existing manually modified database.
+
+Browser notifications need HTTPS and explicit user permission; no provider push
+credentials or service worker were added. MESSAGE_EDIT_WINDOW_MS is optional
+for development tests and ignored in production. Production always uses the
+15-minute edit limit and 48-hour delete-for-everyone limit.
+
 ## Preparation verification evidence (Phase 6)
 
 The following checks were run locally against the Phase 6 code on 2026-10-27:
