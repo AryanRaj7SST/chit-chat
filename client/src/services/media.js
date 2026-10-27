@@ -51,6 +51,7 @@ export async function uploadImage(blob, mime, conversationId, kind, dimensions, 
   const { data } = await api.post("/uploads/sign", { conversationId, kind, mime, size: blob.size, ...dimensions }, { signal });
   // A separate axios instance sends no application JWT to an R2 host.
   const local = new URL(data.upload.url).pathname.startsWith("/api/uploads/local/");
+  if (data.upload.headers["Content-Type"] !== mime) throw new Error("Upload link Content-Type does not match the image");
   const headers = { ...data.upload.headers };
   if (local) headers.Authorization = api.defaults.headers.common.Authorization || `Bearer ${localStorage.getItem("chat_token") || ""}`;
   await axios.request({ url: data.upload.url, method: data.upload.method, headers, data: blob, signal,

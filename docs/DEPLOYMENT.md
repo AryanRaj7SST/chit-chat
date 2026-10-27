@@ -243,10 +243,48 @@ No R2 bucket or credentials were created or exercised during local testing.
    API and Socket.IO, while the bucket CORS policy governs direct image PUT/GET.
    Redeploy Render after saving its environment settings, then rebuild/redeploy
    Vercel for the new client. Never add R2 secrets to any VITE_ variable.
+
 6. With two accepted-friend accounts, send a photo and download its original.
    Compare hashes, refresh history, test an expired link, and confirm an outsider
    cannot request its media URL. Try GIF/PNG transparency and a rotated camera
    JPEG. An unsigned bucket URL must remain inaccessible.
+
+### Supabase Storage (S3-compatible alternative)
+
+Supabase Storage can be used instead of R2 through its S3 protocol. This keeps
+the bucket private and uses presigned URLs; the application does not receive
+Supabase service-role credentials.
+
+1. In the Supabase dashboard, open **Storage → Buckets**, create a **private**
+   bucket named `chit-chat`, and leave public access disabled.
+2. Open **Storage → S3 Connection** and enable the S3 connection. Copy the
+   endpoint and note the S3 region shown by Supabase.
+3. Create an S3 access key with access to the `chit-chat` bucket. Keep the
+   access key ID and secret in a password manager; do not put them in Git,
+   screenshots, Vercel, or client-side variables.
+4. On Render, set these backend environment variables:
+
+   | Variable | Value |
+   | --- | --- |
+   | `STORAGE_DRIVER` | `s3` |
+   | `S3_ENDPOINT` | Supabase S3 endpoint |
+   | `S3_REGION` | Supabase S3 region |
+   | `S3_ACCESS_KEY_ID` | Supabase S3 access key ID |
+   | `S3_SECRET_ACCESS_KEY` | Supabase S3 secret access key |
+   | `S3_BUCKET` | `chit-chat` |
+   | `MEDIA_ENABLED` | `true` |
+
+   `S3_ENDPOINT` must be the S3 endpoint, not the normal Supabase project URL.
+   Do not set R2 credentials for this driver. The server validates every
+   required S3 variable during startup and names the missing variable if one is
+   absent.
+5. Configure the Supabase Storage S3 CORS policy for the exact frontend origin
+   and allow `PUT` with the signed `Content-Type` and `If-None-Match` headers.
+   Include `http://localhost:5173` only when testing from the local client.
+   Run `npm run storage:check` from `server` with the Render-equivalent
+   environment to print the preflight headers and verify the upload, range
+   read, download hash, and cleanup. A Node check cannot prove that a browser
+   upload succeeds; test the hosted browser separately.
 
 The client uploads original image data to ten-minute signed PUT URLs and uses
 separate JPEG thumbnails. Default-on JPEG privacy removal changes APP1 Exif
