@@ -3,6 +3,7 @@ import { ArrowLeft, MoreVertical, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { getErrorMessage } from "../services/api";
 import { useSocket } from "../hooks/useSocket";
+import { useAuth } from "../hooks/useAuth";
 import { formatMessageDate, getOther, sameMessageGroup } from "../utils/format";
 import { latestReadAt, mergeMessages } from "../utils/messages";
 import Avatar from "./Avatar";
