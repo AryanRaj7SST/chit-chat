@@ -14,7 +14,8 @@ flowchart TB
     REST["Express REST API\nauth, users, conversations, history"]
     SOCKET["Socket.IO\nmessages, typing, presence, read updates"]
     AUTH["Shared JWT verification\nHTTP Bearer token / socket handshake"]
-    MODELS["Mongoose\nUser · Conversation · Message"]
+    MODELS["Mongoose\nUser · Friendship · Conversation · Message"]
+    BUDDY["Buddy AI\nLocal keyword rules + delayed replies"]
     ROOMS["Per-user rooms: user:&lt;id&gt;\nAll tabs/devices for each user"]
   end
   DB[(MongoDB / Atlas)]
@@ -26,6 +27,8 @@ flowchart TB
   SOCKET --> AUTH
   REST --> MODELS
   SOCKET --> MODELS
+  SOCKET --> BUDDY
+  BUDDY --> MODELS
   MODELS <--> DB
   SOCKET <--> ROOMS
 ```
@@ -46,7 +49,9 @@ deployment.
    its Bearer header. Passwords are bcrypt-hashed on account creation.
 3. **Validate and authorize.** The handler cleans the content, rejects empty or
    overlong messages, and looks up the conversation with the authenticated user
-   in its participants. An outsider cannot send into it.
+   in its participants. It also verifies a current accepted friendship, unless
+   the other participant is Buddy. An outsider cannot send into it; an unfriended
+   former participant cannot send new messages even though old history remains readable.
 4. **Persist.** Mongoose saves the message in MongoDB and updates the
    conversation's last-message reference. A persisted `tempId`, unique for the
    sender/conversation, lets retries reuse the saved message.
@@ -90,3 +95,31 @@ sequenceDiagram
   remains connected. These presence records live in one backend process's
   memory, not MongoDB. Group chat and multi-instance coordination are outside
   this project's scope.
+
+## Friend requests and Buddy
+
+`Friendship` has a unique sorted pairKey and pending/accepted status. The recipient
+alone may accept/decline, and the requester alone may cancel. A reciprocal pending
+request auto-accepts; concurrent inserts are resolved through the unique index.
+Decline, cancel and unfriend delete the friendship document. Conversations and
+messages are preserved, and become visible in the list again when users re-friend.
+
+Search requires two characters, excludes the caller and bots, and masks emails
+unless the users are accepted friends. Discovery is search-only; the sidebar has
+Chats and Requests tabs. Request attempts have a per-process in-memory limit of
+20 per user per hour. Four room-scoped events keep request badges and friendships
+current: friend:request, friend:accepted, friend:removed, friend:request:removed.
+
+Presence snapshots include online friends and Buddy, and human status changes
+are published only to friends' rooms. Empty room lists are never broadcast.
+Accepting a friendship publishes online status between the new friends; unfriending
+removes those dots and stops subsequent scoped presence/typing updates.
+
+Buddy is a reserved isBot user initialized after MongoDB connects. Each user gets
+one Buddy conversation and one welcome message on registration or their next
+conversation listing. A newly persisted user message is acknowledged before a
+700–1500ms timer creates Buddy's reply. Typing/reply/read events go to all of that
+user's tabs. Retrying the same tempId does not schedule another reply. Failures
+are contained and always stop the bot's typing indicator when pending replies finish.
+Buddy uses local keyword rules, not an external AI API; it cannot be requested,
+unfriended, hidden, or logged into as a human.

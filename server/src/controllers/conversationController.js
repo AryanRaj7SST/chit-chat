@@ -4,13 +4,17 @@ import Message from "../models/Message.js";
 import User from "../models/User.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import HttpError from "../utils/HttpError.js";
+import { ensureBuddyConversation, ensureBuddy } from "../bot/buddy.js";
+import { canMessage, getFriendIds, pairKey } from "../utils/friendship.js";
 
 const populateConversation = (query) =>
-  query.populate("participants", "name email").populate("lastMessage");
+  query.populate("participants", "name email isBot").populate("lastMessage");
 
 export const listConversations = asyncHandler(async (req, res) => {
+  await ensureBuddyConversation(req.user._id);
+  const allowed = [...await getFriendIds(req.user._id), await ensureBuddy()];
   const conversations = await populateConversation(
-    Conversation.find({ participants: req.user._id, lastMessage: { $ne: null } }).sort({ updatedAt: -1 })
+    Conversation.find({ $and: [{ participants: req.user._id }, { participants: { $in: allowed } }] }).sort({ updatedAt: -1 })
   );
   const counts = conversations.length ? await Message.aggregate([
     { $match: {
@@ -34,8 +38,9 @@ export const getOrCreateConversation = asyncHandler(async (req, res) => {
   if (!mongoose.isValidObjectId(userId)) throw new HttpError(400, "A valid userId is required");
   if (String(userId) === String(req.user._id)) throw new HttpError(400, "You cannot chat with yourself");
   if (!(await User.exists({ _id: userId }))) throw new HttpError(404, "User not found");
+  if (!(await canMessage(req.user._id, userId))) throw new HttpError(403, "You can only message friends");
 
-  const key = [String(req.user._id), String(userId)].sort().join("_");
+  const key = pairKey(req.user._id, userId);
 
   let conversation;
   try {
@@ -49,7 +54,7 @@ export const getOrCreateConversation = asyncHandler(async (req, res) => {
     conversation = await Conversation.findOne({ participantsKey: key }); // lost a race, fetch winner
   }
 
-  await conversation.populate("participants", "name email");
+  await conversation.populate("participants", "name email isBot");
   await conversation.populate("lastMessage");
   res.json({ success: true, conversation });
 });

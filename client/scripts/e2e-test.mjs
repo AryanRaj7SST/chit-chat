@@ -46,7 +46,11 @@ const register = async (page, name, label) => {
   await expect(page.getByRole("status", { name: "Loading people and conversations" }).first()).toBeVisible();
   release();
   await page.unrouteAll({ behavior: "wait" });
-  await expect(page.getByText("No conversations yet. Pick someone below to say hello.")).toBeVisible();
+  const buddy = page.locator("aside").getByRole("button").filter({ hasText: "Buddy AI" });
+  await expect(buddy).toBeVisible();
+  await buddy.click();
+  await expect(page.locator("section header").getByText("Always online - automated replies", { exact: true })).toBeVisible();
+  await expect(buddy.getByLabel("1 unread messages", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Connecting to the server...", { exact: true })).toHaveCount(0);
 };
 const openChat = async (page, name) => {
@@ -63,6 +67,20 @@ try {
   await register(pageB, nameB, "b");
   check("register two unique users in separate browser contexts");
   await pageA.getByPlaceholder("Search people by name or email").fill(`e2e-b-${run}@example.com`);
+  const resultB = pageA.getByRole("listitem").filter({ hasText: nameB });
+  await expect(resultB).toBeVisible();
+  await expect(resultB.getByText(`e2e-b-${run}@example.com`, { exact: true })).toHaveCount(0);
+  await resultB.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(resultB.getByRole("button", { name: "Pending", exact: true })).toBeDisabled();
+  await resultB.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(resultB.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+  await resultB.getByRole("button", { name: "Add", exact: true }).click();
+  await pageB.getByRole("tab", { name: /Requests/ }).click();
+  await expect(pageB.getByRole("region", { name: "Incoming requests" }).getByText(nameA)).toBeVisible();
+  await pageB.getByRole("region", { name: "Incoming requests" }).getByRole("button", { name: "Accept", exact: true }).click();
+  await pageB.getByRole("tab", { name: "Chats", exact: true }).click();
+  await pageA.getByRole("button", { name: "Clear search" }).click();
+  check("masked discovery, request cancellation, live invitation and acceptance work");
   let releaseHistory;
   const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
   const holdHistory = async (route) => { await historyGate; await route.continue(); };
@@ -128,6 +146,22 @@ try {
   await expect(pageA.locator("section header").getByText("Online", { exact: true })).toBeVisible();
   check("clearing the draft stops typing");
 
+  await pageB.getByLabel("Friend options").click();
+  pageB.once("dialog", (dialog) => dialog.accept());
+  await pageB.getByRole("button", { name: "Unfriend", exact: true }).click();
+  await expect(pageA.getByPlaceholder("Type a message...")).toHaveCount(0);
+  await expect(pageA.locator("aside").getByRole("button").filter({ hasText: nameB })).toHaveCount(0);
+  await pageA.getByPlaceholder("Search people by name or email").fill(`e2e-b-${run}@example.com`);
+  await pageA.getByRole("listitem").filter({ hasText: nameB }).getByRole("button", { name: "Add", exact: true }).click();
+  await pageB.getByRole("tab", { name: /Requests/ }).click();
+  await pageB.getByRole("region", { name: "Incoming requests" }).getByRole("button", { name: "Accept", exact: true }).click();
+  await pageB.getByRole("tab", { name: "Chats", exact: true }).click();
+  await pageA.getByRole("button", { name: "Clear search" }).click();
+  await openChat(pageA, nameB);
+  await openChat(pageB, nameA);
+  await expect(messages(pageA, "Hello from A")).toHaveCount(1);
+  check("confirmed unfriend closes the other chat; re-friending restores history");
+
   const secondTabB = await contextB.newPage();
   await secondTabB.goto(base);
   await expect(secondTabB.getByRole("button", { name: "Log out" })).toBeVisible();
@@ -187,6 +221,8 @@ try {
   await expect.poll(() => pageA.locator("section").evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(lightBackground);
   const darkBackground = await pageA.locator("section").evaluate((element) => getComputedStyle(element).backgroundColor);
   await expect.poll(() => pageA.getByPlaceholder("Search people by name or email").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(darkBackground);
+  const darkText = await pageA.locator("body").evaluate((element) => getComputedStyle(element).color);
+  await expect.poll(() => pageA.locator("aside").getByRole("button").filter({ hasText: nameB }).evaluate((element) => getComputedStyle(element).color)).toBe(darkText);
   await pageA.screenshot({ path: "test-results/phase-5-dark.png" });
   await pageA.reload();
   await expect(pageA.locator("html")).toHaveClass("dark");
@@ -217,6 +253,15 @@ try {
   await expect(pageA.getByRole("button", { name: "Log out" })).toBeFocused();
   expect(await pageA.getByRole("button", { name: "Log out" }).evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
   check("sidebar errors retry successfully and keyboard navigation has a visible focus outline");
+  await pageA.getByRole("button", { name: "Clear search" }).click();
+  await openChat(pageA, "Buddy AI");
+  await expect(pageA.getByLabel("Friend options")).toHaveCount(0);
+  const botMessages = pageA.locator('[data-message-id]');
+  const beforeBot = await botMessages.count();
+  await send(pageA, "hello Buddy");
+  await expect(botMessages).toHaveCount(beforeBot + 2);
+  await expect(pageA.locator("section header").getByText("Always online - automated replies", { exact: true })).toBeVisible();
+  check("Buddy is pinned, replies in chat, and has no unfriend menu");
   expect(errors).toEqual([]);
   process.stdout.write("All browser checks passed\n");
 } catch (error) {

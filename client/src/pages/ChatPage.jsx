@@ -6,6 +6,7 @@ import ChatWindow from "../components/ChatWindow";
 import { useAuth } from "../hooks/useAuth";
 import { useSocket } from "../hooks/useSocket";
 import api, { getErrorMessage } from "../services/api";
+import { getFriends, getFriendRequests, sendFriendRequest, acceptFriendRequest, declineFriendRequest, cancelFriendRequest, removeFriend } from "../services/friends";
 
 // move a conversation to the top with its newest message
 const bump = (list, msg) => {
@@ -28,9 +29,27 @@ export default function ChatPage() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [usersError, setUsersError] = useState("");
   const [searchRetry, setSearchRetry] = useState(0);
+  const [friends, setFriends] = useState([]);
+  const [requests, setRequests] = useState({ incoming: [], outgoing: [] });
+  const [socialError, setSocialError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const conversationRequest = useRef(0);
   const receivedIds = useRef(new Set());
+  const socialRequest = useRef(0);
+
+  const loadSocial = useCallback(async () => {
+    const request = ++socialRequest.current;
+    try {
+      const [people, invitations] = await Promise.all([getFriends(), getFriendRequests()]);
+      if (request !== socialRequest.current) return;
+      setFriends(people.data.friends);
+      setRequests({ incoming: invitations.data.incoming, outgoing: invitations.data.outgoing });
+      setSocialError("");
+    } catch (err) {
+      if (request === socialRequest.current) setSocialError(getErrorMessage(err));
+    }
+  }, []);
 
   const loadConversations = useCallback(async () => {
     const request = ++conversationRequest.current;
@@ -38,6 +57,7 @@ export default function ChatPage() {
       const { data } = await api.get("/conversations");
       if (request !== conversationRequest.current) return;
       setConversations(data.conversations);
+      setActiveConv((previous) => previous ? data.conversations.find((conversation) => conversation._id === previous._id) || null : null);
       setConvsError("");
     } catch (err) {
       if (request === conversationRequest.current) setConvsError(getErrorMessage(err));
@@ -48,11 +68,18 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadConversations();
-  }, [loadConversations]);
+    loadSocial();
+  }, [loadConversations, loadSocial]);
 
-  // debounced user search (empty query lists registered users)
+  // Discovery is search-only; never fetch a directory of all accounts.
   useEffect(() => {
     let cancelled = false;
+    if (query.trim().length < 2) {
+      setUsers([]);
+      setUsersLoading(false);
+      setUsersError("");
+      return;
+    }
     setUsersLoading(true);
     const timer = setTimeout(
       async () => {
@@ -87,18 +114,49 @@ export default function ChatPage() {
       setConversations((prev) => bump(prev, msg));
       loadConversations(); // unread counts are always computed by the server
     };
-    const onConnect = () => loadConversations();
+    const onConnect = () => { loadConversations(); loadSocial(); };
     const onRead = () => loadConversations();
+    const onRequest = ({ requestId, from }) => {
+      toast(`${from.name} sent you a friend request`);
+      setRequests((previous) => previous.incoming.some((item) => item._id === requestId) ? previous : {
+        ...previous, incoming: [...previous.incoming, { _id: requestId, user: from, createdAt: new Date().toISOString() }],
+      });
+      loadSocial();
+      setSearchRetry((value) => value + 1);
+    };
+    const onAccepted = ({ user: friend }) => {
+      toast.success(`${friend.name} accepted your friend request`);
+      loadSocial();
+      loadConversations();
+      setSearchRetry((value) => value + 1);
+    };
+    const onRemoved = ({ userId }) => {
+      setFriends((previous) => previous.filter((friend) => friend._id !== userId));
+      setConversations((previous) => previous.filter((conversation) => !conversation.participants.some((person) => person._id === userId)));
+      setActiveConv((previous) => previous?.participants.some((person) => person._id === userId) ? null : previous);
+      loadSocial();
+      loadConversations();
+      setSearchRetry((value) => value + 1);
+    };
+    const onRequestRemoved = () => { loadSocial(); setSearchRetry((value) => value + 1); };
 
     socket.on("message:new", onNew);
     socket.on("connect", onConnect);
     socket.on("message:read:update", onRead);
+    socket.on("friend:request", onRequest);
+    socket.on("friend:accepted", onAccepted);
+    socket.on("friend:removed", onRemoved);
+    socket.on("friend:request:removed", onRequestRemoved);
     return () => {
       socket.off("message:new", onNew);
       socket.off("connect", onConnect);
       socket.off("message:read:update", onRead);
+      socket.off("friend:request", onRequest);
+      socket.off("friend:accepted", onAccepted);
+      socket.off("friend:removed", onRemoved);
+      socket.off("friend:request:removed", onRequestRemoved);
     };
-  }, [socket, user._id, loadConversations]);
+  }, [socket, user._id, loadConversations, loadSocial]);
 
   const openConversation = (conv) => {
     setActiveConv(conv);
@@ -109,9 +167,24 @@ export default function ChatPage() {
       const { data } = await api.post("/conversations", { userId: u._id });
       setQuery("");
       openConversation(data.conversation);
+      loadConversations();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
+  };
+
+  const friendAction = async (action, id) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const commands = { add: sendFriendRequest, accept: acceptFriendRequest, decline: declineFriendRequest, cancel: cancelFriendRequest, unfriend: removeFriend };
+      const { data } = await commands[action](id);
+      if (data.status === "accepted") toast.success(`You and ${data.user.name} are now friends`);
+      await Promise.all([loadSocial(), loadConversations()]);
+      setSearchRetry((value) => value + 1);
+      if (action === "unfriend") setActiveConv((previous) => previous?.participants.some((person) => person._id === id) ? null : previous);
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setBusy(false); }
   };
 
   // called by ChatWindow once the server has confirmed a message is saved
@@ -141,6 +214,12 @@ export default function ChatPage() {
           onSelectConversation={openConversation}
           onSelectUser={openWithUser}
           users={users}
+          friends={friends}
+          requests={requests}
+          socialError={socialError}
+          onRetrySocial={loadSocial}
+          onFriendAction={friendAction}
+          busy={busy}
           usersLoading={usersLoading}
           convsLoading={convsLoading}
           convsError={convsError}
@@ -160,6 +239,8 @@ export default function ChatPage() {
             me={user}
             onBack={() => setActiveConv(null)}
             onMessageSent={handleMessageSent}
+            onUnfriend={(id) => friendAction("unfriend", id)}
+            busy={busy}
           />
         ) : (
           <div className="hidden min-w-0 flex-1 flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 px-6 text-center md:flex">
@@ -168,7 +249,7 @@ export default function ChatPage() {
             </div>
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Select a conversation</h2>
             <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">
-              Choose someone from the list or search for a person to start chatting.
+              Chat with Buddy AI, or search for someone and add them as a friend.
             </p>
           </div>
         )}

@@ -65,6 +65,20 @@ additional tab for one user. Playwright is a development dependency only.
 
 ## Manual checklist
 
+- [ ] Search with fewer than two characters: no directory results. Check masked
+  emails, Add/Pending/Cancel, Accept/Decline, request badges, and Chats/Requests.
+- [ ] Add each other simultaneously in two browser sessions: one friendship,
+  no duplicate requests, and online dots appear without refresh.
+- [ ] Unfriend while the other user has the chat open, including while offline.
+  Confirm sending/typing stops; re-friend and confirm saved history returns.
+- [ ] Keep an unrelated third user open: it should not receive either person's
+  status changes or friend events. Close one of several friend tabs, then the last.
+- [ ] Chat with Buddy: hello, help, time/date, eight jokes, thanks, bye, friend/add,
+  love/sad/bored and unknown text. Confirm automated label, typing, all-tab
+  delivery, one welcome, and no request/unfriend menu. Test slow/lost acknowledgements.
+- [ ] Restart the backend to confirm friendship persistence. The request limiter,
+  presence and joke rotation are per-process memory and reset on restart.
+
 - [ ] Use real phones with Android Chrome and iOS Safari: verify the keyboard,
   safe areas, scrolling, and back button at 375px. Chromium emulation cannot
   establish real-device or other-browser behavior.
@@ -187,3 +201,28 @@ client on port 5174:
 Light and dark desktop screenshots were inspected. Real-device rendering,
 Safari/Firefox, production deployment, and every possible network race remain
 manual checks.
+
+## Friendships and Buddy verification
+
+The updated local implementation was checked with the backend on port 5001 and
+the development client on port 5174:
+
+- `npm run verify`: `All checks passed`. This includes masked pending search,
+  request/accept/decline/cancel events and role checks, reciprocal-request races,
+  empty friend conversations, stranger-scoped presence, immediate accepted-friend
+  dots, unfriend send/typing denial, re-friend history, Buddy welcome and replies,
+  bot retry deduplication, and the 20-attempt request limit. Earlier messaging,
+  JWT, read receipt, unread count and reconnect checks still pass.
+- Client `npm run build`: `✓ built in 1.29s`.
+- Server `npm test`: `ℹ pass 3`, `ℹ fail 0`; includes deterministic Buddy rules
+  and all eight jokes. Client `npm test`: `ℹ pass 8`, `ℹ fail 0`.
+- Browser `npm run e2e`: `All browser checks passed`, including cancellation and
+  acceptance through the UI, confirmed unfriend closing the other chat, restored
+  history on re-friend, Buddy's reply and missing unfriend menu, plus prior
+  responsive, theme, typing, presence, read and retry-state coverage.
+- The README contract audit covers 15 REST routes and 13 application socket
+  events. No existing event name was changed.
+
+Hosted deployment, Safari/Firefox, real-device rendering, hour-long limiter
+rollover in real time, and an injected bot/database failure were not verified.
+Use the manual checks above for unreliable networks and cross-device behavior.

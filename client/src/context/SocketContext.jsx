@@ -35,12 +35,18 @@ export function SocketProvider({ children }) {
         window.dispatchEvent(new Event("auth:logout"));
       }
     };
+    const onRemoved = ({ userId: id }) => setOnlineIds((previous) => {
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
 
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("presence:list", onList);
     s.on("user:status", onStatus);
     s.on("connect_error", onError);
+    s.on("friend:removed", onRemoved);
     setSocket(s);
     s.connect();
 
@@ -50,6 +56,7 @@ export function SocketProvider({ children }) {
       s.off("presence:list", onList);
       s.off("user:status", onStatus);
       s.off("connect_error", onError);
+      s.off("friend:removed", onRemoved);
       s.disconnect();
       setSocket(null);
       setConnected(false);

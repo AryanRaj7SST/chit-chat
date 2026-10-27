@@ -3,6 +3,11 @@ import http from "http";
 import app from "./app.js";
 import connectDB from "./config/db.js";
 import { initSocket } from "./socket/index.js";
+import { ensureBuddy } from "./bot/buddy.js";
+import User from "./models/User.js";
+import Friendship from "./models/Friendship.js";
+import Conversation from "./models/Conversation.js";
+import Message from "./models/Message.js";
 
 const PORT = Number(process.env.PORT || 5000);
 if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
@@ -19,6 +24,8 @@ const server = http.createServer(app);
 initSocket(server);
 
 connectDB()
+  .then(() => Promise.all([User.init(), Friendship.init(), Conversation.init(), Message.init()]))
+  .then(() => ensureBuddy())
   .then(() => server.listen(PORT, "0.0.0.0", () => console.log(`Server listening on port ${server.address().port}`)))
   .catch((err) => {
     console.error("Startup failed:", err.message);

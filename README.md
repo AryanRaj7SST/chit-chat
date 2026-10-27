@@ -1,6 +1,6 @@
 # MERN Chat
 
-A private, one-to-one messaging app built with React and Express. Users find each other, exchange live messages, and reopen saved conversations after a refresh. MongoDB stores the data; Socket.IO delivers live updates.
+A private, one-to-one messaging app built with React and Express. Users find and add friends, exchange live messages, and reopen saved conversations after a refresh. Buddy AI is a built-in automated companion using local keyword rules. MongoDB stores the data; Socket.IO delivers live updates.
 
 The repository includes deployment configuration and a recording kit. Hosted deployment and production verification have **not** been established by the local checks described here.
 
@@ -9,11 +9,13 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 ### Core
 
 - Register/login with bcrypt-hashed passwords and a seven-day JWT; restore sessions after refresh.
-- Search people by name/email, excluding yourself, and start a private conversation.
+- Search by at least two characters of a name/email; non-friend emails are masked. Send, accept, decline, or cancel friend requests before starting a human chat.
+- Unfriend without deleting saved history; re-friending restores the same conversation. Old history remains membership-readable, but every human send/typing event requires a current friendship.
+- Buddy AI is pinned first and always appears online. Its welcome, greetings, help, time/date, eight rotating jokes, and kind replies use local rules, with no external AI API.
 - Reuse the same conversation for a participant pair instead of creating duplicates.
 - Send live text messages up to 2,000 characters, with pending/failed states, acknowledgement, and retry identity to avoid saving a retry twice.
 - Persist messages/previews in MongoDB; load missed messages after reconnect and reconcile rows without duplicates.
-- Show online/offline status across multiple tabs and temporary typing indicators.
+- Show friend-scoped online/offline status across multiple tabs and temporary typing indicators. Strangers do not receive presence updates.
 - Use a responsive list/chat layout, keyboard focus styles, skeletons, empty/error states, Today/Yesterday separators, and grouped bubbles.
 
 ### Implemented optional features
@@ -61,7 +63,7 @@ flowchart LR
 
 REST uses `Authorization: Bearer <token>`; Socket.IO verifies the JWT in `handshake.auth.token`. Sockets join `user:<id>` rooms. The message handler checks membership, validates content, saves the message, and updates the conversation. It then queues `message:new` to participant rooms except the sending socket and returns the sender's acknowledgement. Persistence precedes both delivery paths.
 
-Read positions are server timestamps stored in `Conversation.lastReadAt`, keyed by participant ID. Read updates do not change conversation ordering. See the [architecture walkthrough](docs/ARCHITECTURE.md).
+Read positions are server timestamps stored in `Conversation.lastReadAt`, keyed by participant ID. Read updates do not change conversation ordering. `Friendship` stores one pending/accepted record per unique participant pair; decline, cancel and unfriend delete that record. Buddy is initialized after database connection; existing users get its conversation on their next conversation listing. See the [architecture walkthrough](docs/ARCHITECTURE.md).
 
 ## Prerequisites
 
@@ -217,7 +219,8 @@ Use a normal window and an incognito/private window for independent sessions. Se
 │       ├── config/              # MongoDB and shared CORS settings
 │       ├── controllers/
 │       ├── middleware/          # JWT protection, membership, errors
-│       ├── models/              # User, Conversation, Message
+│       ├── models/              # User, Friendship, Conversation, Message
+│       ├── bot/buddy.js          # Buddy account, welcome, local reply rules
 │       ├── routes/
 │       ├── socket/index.js
 │       ├── utils/
@@ -240,12 +243,19 @@ Paths include `/api`. Protected requests require `Authorization: Bearer <token>`
 | POST | `/api/auth/register` | Public | `{ name, email, password }`; 201 with `{ success, token, user }` |
 | POST | `/api/auth/login` | Public | `{ email, password }`; `{ success, token, user }` |
 | GET | `/api/auth/me` | JWT | `{ success, user }` |
-| GET | `/api/users?q=<search>` | JWT | `{ success, users }`; up to 20 other users, sorted by name |
-| GET | `/api/conversations` | JWT | `{ success, conversations }`; own non-empty conversations, newest first, with participants, lastMessage, lastReadAt and unreadCount |
-| POST | `/api/conversations` | JWT | `{ userId }`; get/create a private pair, returning `{ success, conversation }`; self-chat rejected |
+| GET | `/api/users?q=<search>` | JWT | Query needs 2+ characters; up to 20 non-bot results with _id, name, maskedEmail, relationship and optional pending requestId; full email only for friends |
+| POST | `/api/friends/requests` | JWT | `{ userId }`; 201 pending `{ success, status, requestId }`, or 200 auto-accepted `{ success, status, user }` for a mutual request; duplicates 409, 20 attempts/user/hour |
+| GET | `/api/friends/requests` | JWT | `{ success, incoming, outgoing }`; items `{ _id, user: { _id, name }, createdAt }` |
+| POST | `/api/friends/requests/:id/accept` | JWT + recipient | `{ success, status: "accepted", user }` |
+| POST | `/api/friends/requests/:id/decline` | JWT + recipient | Delete pending request; `{ success }` |
+| DELETE | `/api/friends/requests/:id` | JWT + requester | Cancel pending request; `{ success }` |
+| GET | `/api/friends` | JWT | `{ success, friends }`; accepted friends with _id, name, email |
+| DELETE | `/api/friends/:userId` | JWT | Unfriend and retain history; `{ success }`; Buddy cannot be unfriended |
+| GET | `/api/conversations` | JWT | Own friend/Buddy conversations, including empty ones, with participants (including isBot), lastMessage, lastReadAt, unreadCount |
+| POST | `/api/conversations` | JWT | `{ userId }`; get/create accepted-friend or Buddy pair; non-friend 403 "You can only message friends" |
 | GET | `/api/conversations/:id/messages?limit=50&before=<ISO-date>` | JWT + membership | `{ success, messages, hasMore, lastReadAt }`; default 50, limit 1–100, exclusive before date, returned oldest-to-newest |
 
-Registration requires a 2–50 character name, valid email, and password of at least six characters. Public user objects contain `_id`, `name`, `email`, and `createdAt`; they never contain password hashes.
+Registration requires a 2–50 character name, valid email, and password of at least six characters. Public profiles include _id, name, email, createdAt and isBot, never password hashes. Search returns a different privacy-preserving shape; relationship is none, friends, request_sent or request_received. The request limiter is in memory per backend process and resets on restart.
 
 ## Socket.IO contract
 
@@ -253,15 +263,19 @@ Connect to `VITE_SOCKET_URL` with `auth: { token }`. The sender ID comes from th
 
 | Event | Direction | Payload / behavior |
 | --- | --- | --- |
-| `message:send` | Client → server | `{ conversationId, content, tempId? }`; validates membership/content, persists/reuses message, optional acknowledgement |
+| `message:send` | Client → server | `{ conversationId, content, tempId? }`; validates membership and current friendship (or Buddy), persists/reuses message; revoked friendship returns "You are no longer friends" |
 | `message:new` | Server → participant rooms | Saved message including `{ _id, conversation, sender, content, createdAt, tempId? }` and Mongoose metadata; sending socket excluded, sender's other tabs included |
 | `message:read` | Client → server | `{ conversationId }`; membership-checked server timestamp update, optional acknowledgement |
 | `message:read:update` | Server → both participant rooms | `{ conversationId, userId, at }`; includes the reader's other tabs |
 | `typing:start` | Client → server | `{ conversationId }`; membership checked; latest typing state relayed |
 | `typing:stop` | Client → server | `{ conversationId }`; membership checked; latest typing state relayed |
 | `typing:update` | Server → other participant's room | `{ conversationId, userId, isTyping }` |
-| `presence:list` | Server → connecting socket | Array of online user ID strings |
-| `user:status` | Server → other sockets on first connection; all sockets on last disconnect | Online: `{ userId, online: true }`; offline: `{ userId, online: false, lastSeen }` |
+| `presence:list` | Server → connecting socket | Online friend ID strings plus the always-online Buddy ID |
+| `user:status` | Server → friends' rooms only | Online: `{ userId, online: true }`; offline: `{ userId, online: false, lastSeen }`; acceptance publishes current online status between the new friends |
+| `friend:request` | Server → recipient room | `{ requestId, from: { _id, name } }` |
+| `friend:accepted` | Server → requester room | `{ user: { _id, name, email } }`; accepter receives friend data in REST response |
+| `friend:removed` | Server → both affected users' rooms | `{ userId }`; remove former friend's chat/presence and close an open chat |
+| `friend:request:removed` | Server → other side on decline/cancel; accepter's tabs on accept | `{ requestId }`; refresh request badges |
 
 The app supplies `tempId` to make retries idempotent. For custom senders it is optional; when supplied, it must be a non-empty string of at most 100 characters. Content is trimmed and control characters removed before the 2,000-character check.
 
@@ -277,7 +291,7 @@ Every script below is defined in that directory's `package.json`.
 | --- | --- | --- |
 | `server` | `npm run dev` | Watch-mode backend |
 | `server` | `npm start` | Backend without watch mode |
-| `server` | `npm test` | CORS/origin tests; no database needed |
+| `server` | `npm test` | CORS/origin and Buddy rule tests; no database needed |
 | `server` | `npm run verify` | API/socket integration tests against a running backend |
 | `server` | `npm run seed:demo` | Development-only demo accounts |
 | `client` | `npm run dev` | Vite development server |
@@ -338,7 +352,7 @@ The committed configuration is deployment preparation, not proof of a hosted dep
 | npm cannot find package.json at the repo root | Enter server or client first, as shown above. There is no root npm package. |
 | Demo seed refuses production or an existing demo email | Use a separate non-production demo database. Do not bypass the guard or overwrite another person's account. |
 
-## Final local verification
+## v1.0.0 local verification (before friendships)
 
 Release preparation checks were run against the updated local backend on port
 5001 and frontend on port 5174. Actual output excerpts:

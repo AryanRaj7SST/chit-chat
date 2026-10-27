@@ -5,6 +5,11 @@ import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import { getUserFromToken } from "../utils/token.js";
 import { cleanMessageContent, MAX_MESSAGE_LENGTH } from "../utils/validators.js";
+import { canMessage, getFriendIds } from "../utils/friendship.js";
+import { ensureBuddy, getBuddyReply } from "../bot/buddy.js";
+
+let currentIO = null;
+export const getIO = () => currentIO;
 
 const getConversationForUser = (conversationId, userId) => {
   if (!mongoose.isValidObjectId(conversationId)) return null;
@@ -14,14 +19,55 @@ const getConversationForUser = (conversationId, userId) => {
 export function initSocket(httpServer) {
   // userId -> Set of socket ids (a user can have several tabs/devices)
   const onlineUsers = new Map();
+  const announcedOnline = new Set();
   const io = new Server(httpServer, {
     cors: getCorsOptions(),
   });
+  currentIO = io;
+  io.friendshipRevision = 0;
+  const withCurrentFriends = async (userId, publish) => {
+    // A friendship can change while the database lookup is in flight. Retry
+    // before publishing so an old lookup cannot leak presence after unfriend.
+    for (;;) {
+      const revision = io.friendshipRevision;
+      const ids = (await getFriendIds(userId)).map(String);
+      if (revision !== io.friendshipRevision) continue;
+      publish(ids);
+      return;
+    }
+  };
+  const botPending = new Map();
+  let jokeIndex = 0;
+  const queueBuddyReply = (conversationId, userId, botId, content) => {
+    const key = String(conversationId);
+    botPending.set(key, (botPending.get(key) || 0) + 1);
+    io.to(`user:${userId}`).emit("typing:update", { conversationId: key, userId: String(botId), isTyping: true });
+    const joke = /\bjoke\b/i.test(content) ? jokeIndex++ : 0;
+    setTimeout(async () => {
+      try {
+        const reply = await Message.create({ conversation: conversationId, sender: botId,
+          content: getBuddyReply(content, { now: new Date(), variant: Math.floor(Math.random() * 3), jokeIndex: joke }) });
+        const at = new Date();
+        await Conversation.updateOne({ _id: conversationId }, { lastMessage: reply._id, $max: { [`lastReadAt.${botId}`]: at } });
+        io.to(`user:${userId}`).emit("message:new", reply.toObject());
+        io.to(`user:${userId}`).emit("message:read:update", { conversationId: key, userId: String(botId), at: at.toISOString() });
+      } catch {
+        console.error("Buddy reply failed");
+      } finally {
+        const remaining = (botPending.get(key) || 1) - 1;
+        if (remaining) botPending.set(key, remaining);
+        else {
+          botPending.delete(key);
+          io.to(`user:${userId}`).emit("typing:update", { conversationId: key, userId: String(botId), isTyping: false });
+        }
+      }
+    }, 700 + Math.floor(Math.random() * 801));
+  };
 
   // Authenticate every socket with the same JWT used for REST
   io.use(async (socket, next) => {
     const user = await getUserFromToken(socket.handshake.auth?.token);
-    if (!user) return next(new Error("Authentication error"));
+    if (!user || user.isBot) return next(new Error("Authentication error"));
     socket.user = { id: String(user._id), name: user.name };
     next();
   });
@@ -37,8 +83,17 @@ export function initSocket(httpServer) {
       onlineUsers.set(userId, sockets);
     }
     sockets.add(socket.id);
-    if (sockets.size === 1) socket.broadcast.emit("user:status", { userId, online: true });
-    socket.emit("presence:list", [...onlineUsers.keys()]);
+    (async () => {
+      const botId = String(await ensureBuddy());
+      await withCurrentFriends(userId, (ids) => {
+        if (!socket.connected) return;
+        socket.emit("presence:list", [...ids.filter((id) => onlineUsers.has(id)), botId]);
+        if (!announcedOnline.has(userId) && onlineUsers.has(userId)) {
+          announcedOnline.add(userId);
+          if (ids.length) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: true });
+        }
+      });
+    })().catch(() => console.error("Friend presence lookup failed"));
 
     // ----- messaging -----
     socket.on("message:send", async (payload, ack) => {
@@ -51,6 +106,8 @@ export function initSocket(httpServer) {
 
         const conversation = await getConversationForUser(payload?.conversationId, userId);
         if (!conversation) return reply({ success: false, message: "Conversation not found or access denied" });
+        const otherId = conversation.participants.find((id) => String(id) !== userId);
+        if (!(await canMessage(userId, otherId))) return reply({ success: false, message: "You are no longer friends" });
 
         // sender comes from the authenticated socket, never from the client
         const tempId = typeof payload?.tempId === "string" ? payload.tempId : undefined;
@@ -58,15 +115,19 @@ export function initSocket(httpServer) {
           return reply({ success: false, message: "Invalid message tempId" });
         const identity = { conversation: conversation._id, sender: userId, tempId };
         let message;
+        let created = true;
         if (tempId) {
           try {
-            message = await Message.findOneAndUpdate(
+            const result = await Message.findOneAndUpdate(
               identity, { $setOnInsert: { ...identity, content, createdAt: new Date() } },
-              { upsert: true, returnDocument: "after", runValidators: true, timestamps: false }
+              { upsert: true, returnDocument: "after", runValidators: true, timestamps: false, includeResultMetadata: true }
             );
+            message = result.value;
+            created = !result.lastErrorObject.updatedExisting;
           } catch (err) {
             if (err.code !== 11000) throw err;
             message = await Message.findOne(identity);
+            created = false;
           }
         } else {
           message = await Message.create({ conversation: conversation._id, sender: userId, content });
@@ -82,6 +143,10 @@ export function initSocket(httpServer) {
         socket.to(rooms).emit("message:new", data); // everyone except this socket
 
         reply({ success: true, message: data, tempId: payload?.tempId });
+        try {
+          if (created && String(otherId) === String(await ensureBuddy()))
+            queueBuddyReply(conversation._id, userId, otherId, content);
+        } catch { console.error("Buddy scheduling failed"); }
       } catch (err) {
         console.error("message:send failed:", err.message);
         reply({ success: false, message: "Failed to send message" });
@@ -128,6 +193,8 @@ export function initSocket(httpServer) {
         // Database lookups can finish out of order. Relay only the newest
         // typing state for this socket/conversation, including rapid stop/start.
         if (!conversation || !socket.connected || typingVersions.get(id) !== version) return;
+        const otherId = conversation.participants.find((participant) => String(participant) !== userId);
+        if (!(await canMessage(userId, otherId)) || typingVersions.get(id) !== version) return;
         const rooms = conversation.participants
           .filter((p) => String(p) !== userId)
           .map((p) => `user:${p}`);
@@ -150,7 +217,10 @@ export function initSocket(httpServer) {
       set.delete(socket.id);
       if (set.size === 0) {
         onlineUsers.delete(userId);
-        io.emit("user:status", { userId, online: false, lastSeen: new Date().toISOString() });
+        announcedOnline.delete(userId);
+        withCurrentFriends(userId, (ids) => {
+          if (ids.length && !onlineUsers.has(userId)) io.to(ids.map((id) => `user:${id}`)).emit("user:status", { userId, online: false, lastSeen: new Date().toISOString() });
+        }).catch(() => console.error("Friend presence lookup failed"));
       }
     });
   });

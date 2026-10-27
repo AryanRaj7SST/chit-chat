@@ -4,7 +4,7 @@
   "description": "",
   "main": "src/server.js",
   "scripts": {
-    "test": "node --test scripts/deployment-test.mjs",
+    "test": "node --test scripts/deployment-test.mjs scripts/buddy-test.mjs",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "seed:demo": "node scripts/seed-demo.mjs",

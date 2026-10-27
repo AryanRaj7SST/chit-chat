@@ -63,10 +63,59 @@ async function main() {
   const search = await call("GET", `/users?q=b${run}@test`, null, tokenA);
   check("search finds B and excludes self",
     search.data.users?.some((u) => u._id === idB) && !search.data.users.some((u) => u._id === idA));
+  check("search needs at least two characters", (await call("GET", "/users?q=a", null, tokenA)).data.users.length === 0 && (await call("GET", "/users", null, tokenA)).data.users.length === 0);
+  check("search masks non-friend emails", search.data.users.every((u) => !u.email && u.maskedEmail && u.relationship === "none"));
+  check("bot is excluded from search", (await call("GET", "/users?q=Buddy", null, tokenA)).data.users.length === 0);
+  check("non-friends cannot create a conversation", (await call("POST", "/conversations", { userId: idB }, tokenA)).status === 403);
+
+  const botList = await call("GET", "/conversations", null, tokenA);
+  const buddyConversation = botList.data.conversations.find((conversation) => conversation.participants.some((u) => u.isBot));
+  const buddyId = buddyConversation?.participants.find((u) => u.isBot)?._id;
+  check("new users have Buddy and a welcome message", !!buddyId && !!buddyConversation.lastMessage?.content);
+  const earlyA = await connect(tokenA);
+  const earlyB = await connect(tokenB);
+  const earlyC = await connect(tokenC);
+  const strangers = [];
+  earlyC.on("user:status", (event) => strangers.push(event));
+  const strangerUser = await reg("stranger");
+  const strangerProbe = await connect(strangerUser.data.token);
+  strangerProbe.disconnect();
+  await sleep(150);
+  check("strangers do not receive presence", strangers.length === 0);
+  // Reconnect to obtain a fresh snapshot even if the initial snapshot arrived before this test.
+  const botProbe = await connect(tokenA);
+  const botPresence = await waitFor(botProbe, "presence:list");
+  check("Buddy is always present online", botPresence.includes(buddyId));
+  botProbe.disconnect();
+  const requestEvent = waitFor(earlyB, "friend:request");
+  const invitation = await call("POST", "/friends/requests", { userId: idB }, tokenA);
+  check("friend request created and delivered", invitation.status === 201 && (await requestEvent).from._id === idA);
+  check("duplicate friend request returns 409", (await call("POST", "/friends/requests", { userId: idB }, tokenA)).status === 409);
+  check("incoming request is listed", (await call("GET", "/friends/requests", null, tokenB)).data.incoming.some((r) => r._id === invitation.data.requestId));
+  const sentSearch = (await call("GET", `/users?q=b${run}`, null, tokenA)).data.users.find((u) => u._id === idB);
+  const receivedSearch = (await call("GET", `/users?q=a${run}`, null, tokenB)).data.users.find((u) => u._id === idA);
+  check("search reports pending direction without exposing emails", sentSearch.relationship === "request_sent" && receivedSearch.relationship === "request_received" && !sentSearch.email && !receivedSearch.email && sentSearch.requestId === invitation.data.requestId);
+  check("third user cannot accept a request", (await call("POST", `/friends/requests/${invitation.data.requestId}/accept`, {}, tokenC)).status === 403);
+  const acceptedEvent = waitFor(earlyA, "friend:accepted");
+  const acceptedPresenceA = waitFor(earlyA, "user:status");
+  const acceptedPresenceB = waitFor(earlyB, "user:status");
+  const accepted = await call("POST", `/friends/requests/${invitation.data.requestId}/accept`, {}, tokenB);
+  check("recipient accepts and requester gets friend event", accepted.status === 200 && (await acceptedEvent).user._id === idB);
+  check("new friends see online dots without reconnecting", (await acceptedPresenceA).userId === idB && (await acceptedPresenceB).userId === idA);
+  check("both users list each other as friends", (await call("GET", "/friends", null, tokenA)).data.friends.some((u) => u._id === idB) && (await call("GET", "/friends", null, tokenB)).data.friends.some((u) => u._id === idA));
+  check("accepted friends can see full email in search", (await call("GET", `/users?q=b${run}`, null, tokenA)).data.users.find((u) => u._id === idB)?.email === `b${run}@test.com`);
+  check("bot cannot receive requests or be unfriended", (await call("POST", "/friends/requests", { userId: buddyId }, tokenA)).status === 400 && (await call("DELETE", `/friends/${buddyId}`, null, tokenA)).status === 400);
+  check("friend routes require authentication", (await call("GET", "/friends")).status === 401);
+  check("invalid friend ids are rejected", (await call("POST", "/friends/requests", { userId: "invalid" }, tokenA)).status === 400);
+  check("self requests are rejected", (await call("POST", "/friends/requests", { userId: idA }, tokenA)).status === 400);
+  check("unknown friend target returns 404", (await call("POST", "/friends/requests", { userId: "000000000000000000000001" }, tokenA)).status === 404);
+  for (const socket of [earlyA, earlyB, earlyC]) socket.disconnect();
+  await sleep(200);
 
   const c1 = await call("POST", "/conversations", { userId: idB }, tokenA);
   const c2 = await call("POST", "/conversations", { userId: idA }, tokenB);
   check("conversation created", c1.status === 200 && !!c1.data.conversation?._id);
+  check("empty friend conversations are listed", (await call("GET", "/conversations", null, tokenA)).data.conversations.some((c) => c._id === c1.data.conversation._id && c.lastMessage === null));
   check("no duplicate conversation (A->B and B->A same id)", c1.data.conversation._id === c2.data.conversation._id);
   check("cannot chat with yourself", (await call("POST", "/conversations", { userId: idA }, tokenA)).status === 400);
   const convId = c1.data.conversation._id;
@@ -208,6 +257,63 @@ async function main() {
   check("A is told B went offline", statusEvents.some((e) => e.userId === idB && e.online === false));
   const persisted = await call("GET", "/conversations", null, tokenB);
   check("unread count survives socket disconnect", persisted.data.conversations?.[0]?.unreadCount === 1);
+
+  const returningB = await connect(tokenB);
+  await sleep(200);
+  const removedEvent = waitFor(returningB, "friend:removed");
+  check("unfriend succeeds", (await call("DELETE", `/friends/${idB}`, null, tokenA)).status === 200);
+  check("unfriend notifies the other user", (await removedEvent).userId === idA);
+  check("unfriended conversation disappears", !(await call("GET", "/conversations", null, tokenA)).data.conversations.some((c) => c._id === convId));
+  const deniedSend = await emitAck(sockA, "message:send", { conversationId: convId, content: "not allowed", tempId: "denied" });
+  check("membership alone no longer permits sending", !deniedSend.success && deniedSend.message === "You are no longer friends");
+  check("old history remains membership-readable", (await call("GET", `/conversations/${convId}/messages`, null, tokenA)).status === 200);
+  let typingAfterRemoval = false;
+  returningB.on("typing:update", () => { typingAfterRemoval = true; });
+  sockA.emit("typing:start", { conversationId: convId });
+  const statusesAfterRemoval = statusEvents.length;
+  returningB.disconnect();
+  await sleep(300);
+  check("typing and presence stop after unfriend", !typingAfterRemoval && statusEvents.length === statusesAfterRemoval);
+  const again = await call("POST", "/friends/requests", { userId: idB }, tokenA);
+  await call("POST", `/friends/requests/${again.data.requestId}/accept`, {}, tokenB);
+  check("re-friending restores the same history", (await call("GET", "/conversations", null, tokenA)).data.conversations.some((c) => c._id === convId));
+  const idC = rc.data.user._id;
+  const cross = await Promise.all([
+    call("POST", "/friends/requests", { userId: idC }, tokenA),
+    call("POST", "/friends/requests", { userId: idA }, tokenC),
+  ]);
+  check("mutual requests auto-accept despite insert races", cross.every((response) => [200, 201].includes(response.status)) && (await call("GET", "/friends", null, tokenC)).data.friends.some((u) => u._id === idA));
+  const decline = await call("POST", "/friends/requests", { userId: idC }, tokenB);
+  const eventB = await connect(tokenB);
+  const declinedEvent = waitFor(eventB, "friend:request:removed");
+  check("requester cannot decline", (await call("POST", `/friends/requests/${decline.data.requestId}/decline`, {}, tokenB)).status === 403);
+  check("recipient can decline", (await call("POST", `/friends/requests/${decline.data.requestId}/decline`, {}, tokenC)).status === 200);
+  check("decline notifies the requester", (await declinedEvent).requestId === decline.data.requestId);
+  const retryInvitation = await call("POST", "/friends/requests", { userId: idC }, tokenB);
+  check("decline permits a later request", retryInvitation.status === 201);
+  check("recipient cannot cancel", (await call("DELETE", `/friends/requests/${retryInvitation.data.requestId}`, null, tokenC)).status === 403);
+  const cancelledEvent = waitFor(sockC, "friend:request:removed");
+  check("requester can cancel", (await call("DELETE", `/friends/requests/${retryInvitation.data.requestId}`, null, tokenB)).status === 200);
+  check("cancel notifies the recipient", (await cancelledEvent).requestId === retryInvitation.data.requestId);
+  eventB.disconnect();
+
+  const botMessage = waitFor(sockA, "message:new", 3000);
+  const botAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hello", tempId: "bot-hello" });
+  const hello = await botMessage;
+  check("Buddy replies after a successful ack", botAck.success && hello.sender === buddyId && !!hello.content);
+  const jokeMessage = waitFor(sockA, "message:new", 3000);
+  await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "joke", tempId: "bot-joke" });
+  check("Buddy joke differs from greeting", (await jokeMessage).content !== hello.content);
+  const botHistory = await call("GET", `/conversations/${buddyConversation._id}/messages`, null, tokenA);
+  check("welcome is created only once", botHistory.data.messages.filter((m) => m.sender === buddyId).length === 3);
+  const repeatedBotAck = await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, content: "hello", tempId: "bot-hello" });
+  await sleep(1700);
+  const repeatedBotHistory = await call("GET", `/conversations/${buddyConversation._id}/messages`, null, tokenA);
+  check("retrying a bot send does not schedule a duplicate reply", repeatedBotAck.message._id === botAck.message._id && repeatedBotHistory.data.messages.length === botHistory.data.messages.length);
+
+  const limited = await reg("limited");
+  for (let i = 0; i < 20; i++) await call("POST", "/friends/requests", { userId: idA }, limited.data.token);
+  check("friend requests are rate-limited per user", (await call("POST", "/friends/requests", { userId: idA }, limited.data.token)).status === 429);
 
   sockA.disconnect();
   sockC.disconnect();

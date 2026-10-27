@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MoreVertical } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { getErrorMessage } from "../services/api";
 import { useSocket } from "../hooks/useSocket";
@@ -10,12 +10,12 @@ import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import { MessagesSkeleton } from "./Skeletons";
 
-export default function ChatWindow({ conversation, me, onBack, onMessageSent }) {
+export default function ChatWindow({ conversation, me, onBack, onMessageSent, onUnfriend, busy }) {
   const { socket, connected, onlineIds } = useSocket();
   const other = getOther(conversation, me._id);
   const conversationId = conversation._id;
   const otherId = other._id;
-  const isOnline = onlineIds.has(otherId);
+  const isOnline = other.isBot || onlineIds.has(otherId);
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -198,12 +198,20 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent }) 
           <ArrowLeft className="h-5 w-5" />
         </button>
         <Avatar name={other.name} online={isOnline} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{other.name}</p>
           <p className={`text-xs ${otherTyping ? "text-indigo-600 dark:text-indigo-400" : isOnline ? "text-emerald-600" : "text-slate-400"}`}>
-            {otherTyping ? "typing..." : isOnline ? "Online" : "Offline"}
+            {otherTyping ? "typing..." : other.isBot ? "Always online - automated replies" : isOnline ? "Online" : "Offline"}
           </p>
         </div>
+        {!other.isBot && (
+          <details className="relative shrink-0">
+            <summary aria-label="Friend options" className="list-none rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><MoreVertical className="h-5 w-5" /></summary>
+            <button disabled={busy} onClick={() => {
+              if (window.confirm(`Unfriend ${other.name}? Your saved history will remain, but you cannot send new messages until you are friends again.`)) onUnfriend(otherId);
+            }} className="absolute right-0 z-10 mt-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-rose-600 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-rose-400">Unfriend</button>
+          </details>
+        )}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 md:px-4">

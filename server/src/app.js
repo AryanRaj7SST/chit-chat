@@ -4,6 +4,7 @@ import { getCorsOptions } from "./config/cors.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import conversationRoutes from "./routes/conversationRoutes.js";
+import friendRoutes from "./routes/friendRoutes.js";
 import { notFound, errorHandler } from "./middleware/error.js";
 
 const app = express();
@@ -18,6 +19,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/api/friends", friendRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

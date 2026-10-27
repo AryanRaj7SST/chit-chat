@@ -43,6 +43,10 @@
 - [ ] Prepare one additional unused throwaway email for the registration shot.
   Registration with an already seeded email will correctly fail. After that
   shot, log out and log in as Alice for the main exchange.
+- [ ] Include the friend flow before the first human message: Alice searches for
+  Bob (2+ characters), chooses Add, and Bob accepts in Requests. If rehearsed
+  accounts are already friends, unfriend them before this shot; their history
+  remains. Buddy AI is always pinned, is automated, and needs no friend request.
 - [ ] Open a normal window for Alice and a private/incognito window for Bob.
   Two normal tabs share localStorage and are not two independent accounts.
   If browser extensions disable incognito, use two separate browser profiles.
@@ -108,7 +112,7 @@ setup and state “This demonstration is running locally” in the introduction.
 ## Review before submitting
 
 - [ ] The take is four to five minutes and follows the requested sequence.
-- [ ] Both users, live delivery, persistence, online/offline, typing, responsive
+- [ ] Both users, request/accept, live delivery, persistence, online/offline, typing, responsive
   navigation, and the architecture explanation are actually visible.
 - [ ] No credentials other than the intentionally public demo credentials are
   exposed. No real user messages or personal notifications appear.

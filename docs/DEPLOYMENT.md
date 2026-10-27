@@ -179,8 +179,12 @@ Manual checks after both deployments:
 
 - [ ] Refresh `/login` and `/register` directly on Vercel: no hosting 404.
 - [ ] Register two users in separate browser sessions. Send and reply without
-  refreshing; confirm saved history after reload, typing, presence, badges, and
+  refreshing after sending/accepting a friend request; confirm saved history after reload, typing, presence, badges, and
   read checks.
+- [ ] Confirm Buddy AI appears for a newly registered and an existing user and
+  replies without any external AI key. Startup ensures the bot and friendship
+  indexes; use a database role allowed to create indexes. Never assign the
+  reserved buddy@buddy-ai.local address to a human account.
 - [ ] In browser Network tools, confirm API requests go to Render under `/api`,
   and Socket.IO upgrades to WebSocket (`101 Switching Protocols`).
 - [ ] If the browser reports CORS errors, check that Render's `CLIENT_URL`

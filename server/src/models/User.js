@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: [true, "Name is required"], trim: true, minlength: 2, maxlength: 50 },
     email: { type: String, required: [true, "Email is required"], unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
+    isBot: { type: Boolean, default: false },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
@@ -22,7 +23,7 @@ userSchema.methods.matchPassword = function (plain) {
 };
 
 userSchema.methods.toPublic = function () {
-  return { _id: this._id, name: this.name, email: this.email, createdAt: this.createdAt };
+  return { _id: this._id, name: this.name, email: this.email, createdAt: this.createdAt, isBot: this.isBot };
 };
 
 export default mongoose.model("User", userSchema);

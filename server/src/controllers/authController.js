@@ -3,6 +3,7 @@ import asyncHandler from "../utils/asyncHandler.js";
 import HttpError from "../utils/HttpError.js";
 import { signToken } from "../utils/token.js";
 import { isValidEmail } from "../utils/validators.js";
+import { ensureBuddyConversation } from "../bot/buddy.js";
 
 export const register = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body || {};
@@ -16,6 +17,7 @@ export const register = asyncHandler(async (req, res) => {
   if (await User.exists({ email: cleanEmail })) throw new HttpError(409, "Email is already registered");
 
   const user = await User.create({ name: cleanName, email: cleanEmail, password: pass });
+  await ensureBuddyConversation(user._id);
   res.status(201).json({ success: true, token: signToken(user._id), user: user.toPublic() });
 });
 
@@ -26,7 +28,7 @@ export const login = asyncHandler(async (req, res) => {
   if (!cleanEmail || !pass) throw new HttpError(400, "Email and password are required");
 
   const user = await User.findOne({ email: cleanEmail }).select("+password");
-  if (!user || !(await user.matchPassword(pass))) throw new HttpError(401, "Invalid email or password");
+  if (!user || user.isBot || !(await user.matchPassword(pass))) throw new HttpError(401, "Invalid email or password");
 
   res.json({ success: true, token: signToken(user._id), user: user.toPublic() });
 });

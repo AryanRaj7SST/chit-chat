@@ -35,12 +35,14 @@ the capture. Public seeded credentials may be shown only for a local demo.]
 
 ## 1:05–1:55 — Two windows chatting live
 
-[In Alice's window, search for Bob's email and open the conversation. Send
+[In Alice's window, search for Bob's email and choose Add. In Bob's Requests tab,
+accept Alice, then switch to Chats. Open Bob's chat as Alice. Send
 “Hi Bob! Ready for the demo?” Open Alice's conversation in Bob's window, then
 reply “Hi Alice! I can see your message.” Send another short message from Alice.]
 
-“Alice can search for another person by name or email. I’ll choose Bob and send
-a message. It arrives in Bob’s window without a refresh. Bob can reply from his
+“Alice can search for another person by name or email. I'll send Bob a friend
+request, and Bob accepts it in the Requests tab. Now they can chat. Alice's first
+message arrives in Bob’s window without a refresh. Bob can reply from his
 own session, and Alice sees the reply straight away. I’ll send one more message
 so you can watch both screens at once. The clock means a send is still waiting
 for confirmation. A single check means it was saved, and a double check means
