@@ -1,4 +1,4 @@
-# Deploy MERN Chat: Atlas, Render, Vercel
+# Deploy chit-chat: Atlas, Render, Vercel
 
 This guide prepares a deployment; it does not record a completed deployment.
 The Render and Vercel CLIs were not installed in the preparation environment.
@@ -392,12 +392,14 @@ changing a build-time environment variable alone does not update these headers.
    ```text
    VITE_API_URL=https://<actual-render-host>/api
    VITE_SOCKET_URL=https://<actual-render-host>
-   CSP_R2_ORIGIN=https://<account-id>.r2.cloudflarestorage.com
+   CSP_S3_ORIGIN=https://<project-ref>.storage.supabase.co
+   CSP_SUPABASE_ORIGIN=https://<project-ref>.supabase.co
+   # Or use CSP_R2_ORIGIN=https://<account-id>.r2.cloudflarestorage.com for R2.
    ```
 
    Use the exact R2 S3 origin used by signed URLs; do not enable public bucket
    access or put R2 credentials here. API/socket origins can be the same.
-2. From `client`, run `npm run configure:csp`. Review `git diff -- vercel.json`.
+2. From `client`, run `npm run configure:csp`. Set `CSP_S3_ORIGIN` for Supabase Storage or `CSP_R2_ORIGIN` for R2, then review `git diff -- vercel.json`.
    The helper writes the API origin, socket HTTPS and WSS origins, and R2 origin
    into connect-src; images allow self/blob/data/API/R2. Scripts allow self only;
    styles allow self and unsafe-inline for UI-library styles. Other directives

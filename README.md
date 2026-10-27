@@ -1,4 +1,4 @@
-# MERN Chat
+# chit-chat
 
 A hardened, privacy-focused, one-to-one messaging app built with React and Express. Users find and add friends, exchange live messages, and reopen saved conversations after a refresh. Buddy AI is a built-in automated companion using local keyword rules. MongoDB stores the data; Socket.IO delivers live updates. The server can read messages; this app is not end-to-end encrypted. See [SECURITY.md](SECURITY.md) for the threat model.
 
@@ -151,11 +151,13 @@ and its separate browser CORS policy using [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 | --- | --- | --- |
 | `VITE_API_URL` | `http://localhost:5000/api` | Absolute backend API URL; must end in `/api` |
 | `VITE_SOCKET_URL` | `http://localhost:5000` | Backend origin; no `/api` or `/socket.io` suffix |
-| `CSP_R2_ORIGIN` | `https://<account-id>.r2.cloudflarestorage.com` | Public storage origin used only by `configure:csp`; never storage credentials |
+| `CSP_S3_ORIGIN` | `https://<project-ref>.storage.supabase.co` | Public S3-compatible storage origin used only by `configure:csp`; never storage credentials |
+| `CSP_SUPABASE_ORIGIN` | `https://<project-ref>.supabase.co` | Optional public Supabase project origin used only by `configure:csp` |
+| `CSP_R2_ORIGIN` | `https://<account-id>.r2.cloudflarestorage.com` | R2 alternative when not using Supabase Storage |
 
 Both client variables are required public build-time values. Missing/malformed URLs fail validation instead of using the frontend host. Restart Vite after editing `.env`; rebuild/redeploy for a production change. Never put secrets in `VITE_*` variables.
 
-Before Vercel deployment, run `npm run configure:csp` in `client` using your actual public API/socket/storage URLs. Review and commit `vercel.json`: its committed `example.invalid` origins are placeholders and Vercel does not substitute environment variables inside static JSON headers. See the deployment guide.
+Before Vercel deployment, run `npm run configure:csp` in `client` using your actual public API/socket/storage URLs. Review and commit `vercel.json`: Vercel does not substitute environment variables inside static JSON headers. See the deployment guide.
 
 ### Verification-script settings
 
