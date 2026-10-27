@@ -95,7 +95,7 @@ additional tab for one user. Playwright is a development dependency only.
 - [ ] Use a short-lived development JWT, keep the page open until it expires,
   then interrupt and restore networking. A rejected reconnect should return the
   client to login without a reconnect loop. Automated API checks cover expired
-  JWT rejection; they do not wait seven days for a real client token to expire.
+  JWT rejection; they do not wait for a real client token to expire (24 hours after Phase 5.8).
 - [ ] Restart the backend with both users connected. Confirm presence resets,
   missed messages load, and messages do not duplicate after repeated reconnects.
 - [ ] Check long histories (more than the latest 50 messages), Unicode input,
@@ -527,3 +527,98 @@ Final local command evidence:
   purity warnings; this is not a warning-free lint run.
 
 These results are local development evidence, not a production deployment.
+
+## Phase 5.8: security hardening
+
+Use a dedicated development database. Configure a persistent MESSAGE_ENC_KEY
+privately when testing ordinary development accounts. For isolated security
+fixtures, leave port 5001 free, start Vite on 5174 using API/socket port 5001,
+then run from `server`:
+
+```sh
+npm run verify:security -- --browser
+```
+
+This development-only harness starts/stops its own backend, passes an existing
+key or an ephemeral key only through child environments, runs `npm run verify`
+and the production `npm run build`, and optionally runs all three browser suites.
+It never changes `.env` or migrates the full database. Disposable accounts are
+tagged with a unique run ID; cleanup removes only their records and owned local
+objects after stopping the backend. Do not use those accounts for real data.
+An interrupted process can require private fixture cleanup before discarding
+its key. Production refuses the harness.
+
+Direct API runs against a production BASE_URL create four accounts plus a
+duplicate-registration attempt: five registrations consume the hourly IP limit.
+Allow the hour to elapse before repeating from the same IP. Local tests model
+distinct loopback-proxied client addresses; application limits are not disabled.
+Native database/migration checks are local-only and need matching credentials
+and key in the test process. Remote runs explicitly report these as skipped.
+
+Automated coverage includes:
+
+- Generic login errors, cost-12 hashing, eight-character/common-password policy,
+  24-hour versioned JWTs, login 429, logout-all socket disconnect/REST revocation,
+  password-change validation and old-token rejection.
+- Socket flood acknowledgements (`Slow down`), payload allowlists, expired/bad
+  tokens, and twelve parallel handshakes allowing exactly ten active sockets.
+- Native collection inspection of encrypted message text, captions and About;
+  authenticated decrypt round trips, randomized IVs, tamper rejection, literal
+  envelope-like input, missing production key rejection, fixture-only migration
+  idempotence, and the 500-message encrypted-search boundary.
+- JPEG APP1 Exif stripping preserves every compressed-image and non-Exif byte,
+  including progressive scan fixtures; malformed parsing returns the input.
+- Production-built assets served with the actual CSP directives and local
+  API/socket/storage origins: external theme initialization, emoji lazy loading,
+  signed avatar display, privacy toggle default ON, logout-all across independent
+  contexts, and no page errors/CSP violation events.
+- The CSP configuration helper was run against an ignored temporary fixture;
+  it replaced all sample origins, included WSS, retained script-src self, and
+  preserved the SPA rewrite. No real deployment configuration was substituted.
+
+Local unit evidence: client `npm test` reported `tests 15`, `pass 15`, `fail 0`;
+server `npm test` reported `tests 9`, `pass 9`, `fail 0`. Both dependency audits
+reported `found 0 vulnerabilities`; no outstanding advisories were reported.
+Lint exited 0 with existing React context/effect/compiler/ref warnings; it is
+not warning-free. `rg` found no dangerouslySetInnerHTML in client/server source;
+console.log calls there are limited to database/server startup. Only the two
+.env.example files are tracked environment configurations.
+
+Manual rollout checks:
+
+- [ ] Back up the database and persistent key separately. Configure Render's
+  MESSAGE_ENC_KEY privately; perform the dry-run/apply/dry-run migration with
+  that same key during maintenance. Full-database migration and the key-writing
+  helper were not executed during this phase; real secrets were not changed.
+- [ ] Replace CSP example.invalid origins using `npm run configure:csp`, review
+  and commit public vercel.json, and redeploy. Confirm deployed headers, API,
+  WSS, R2 signed thumbnails/lightbox/downloads, and camera under HTTPS. Local
+  policy tests do not establish Vercel/Render/R2 behavior.
+- [ ] Check distinct real-client rate limits and forwarded-IP handling behind
+  Render's managed ingress. Confirm registration limits, upload limits and
+  sustained typing limits under real usage without bypassing the proxy.
+- [ ] On real JPEGs with EXIF/GPS and rotation, compare compressed image data,
+  inspect metadata before/after, and check orientation with removal ON/OFF.
+  XMP/IPTC and other formats are deliberately preserved. Physical cameras,
+  Safari/Firefox and OS privacy/permission controls remain manual checks.
+- [ ] Sign in on two real devices, change the password/log out all devices,
+  then test old REST/socket tokens and re-login. Verify a compromised server
+  is not presented as protected: the server can read messages, and media uses
+  private short-lived links rather than this AES text-field layer.
+
+Final command output excerpts (2026-10-27):
+
+- Server `npm run verify`: `All checks passed`, including
+  `PASS - populated conversation profiles decrypt About`,
+  `PASS - concurrent handshakes never exceed ten sockets`, and
+  `PASS - migration encrypts plaintext and is idempotent`.
+- Client `npm run build`: `✓ built in 1.10s`.
+- Browser suites: `All browser checks passed`, `All media UI checks passed`,
+  and `All security browser checks passed`. An earlier Buddy assertion was
+  intermittent; the final assertion checks the completed reply's text and
+  the full rerun passed.
+- Harness: `All isolated security verification checks passed`; the browser run
+  removed eight disposable accounts, and the final API/build run reported
+  `Removed 4 disposable security test accounts and their data`.
+
+No deployment, full existing-data migration, or real R2 verification is claimed.

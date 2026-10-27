@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { prepareImage, uploadImage } from "../services/media";
 import { getErrorMessage } from "../services/api";
+import { useAuth } from "./useAuth";
 
 export function useImageSharing({ conversationId, isBot, create, update, deliver, replyTo }) {
+  const { user } = useAuth();
   const [drafts, setDrafts] = useState([]);
   const [error, setError] = useState("");
   const [preparingPreview, setPreparingPreview] = useState(false);
@@ -24,7 +26,7 @@ export function useImageSharing({ conversationId, isBot, create, update, deliver
       for (const file of files) {
         if (next.length >= 10) { setError("Choose at most ten photos."); break; }
         try {
-          const prepared = await prepareImage(file);
+          const prepared = await prepareImage(file, { removeLocation: user.settings?.removePhotoLocation !== false });
           if (!alive.current) return;
           prepared.id = crypto.randomUUID(); prepared.localUrl = URL.createObjectURL(file); urls.current.add(prepared.localUrl);
           next.push(prepared);

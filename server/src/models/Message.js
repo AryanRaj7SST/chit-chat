@@ -1,16 +1,17 @@
 import mongoose from "mongoose";
 import { characterCount } from "../utils/validators.js";
+import { decrypt, protectedString } from "../security/encryption.js";
 
 const messageSchema = new mongoose.Schema(
   {
     conversation: { type: mongoose.Schema.Types.ObjectId, ref: "Conversation", required: true },
     sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     type: { type: String, enum: ["text", "image", "system"], default: "text" },
-    content: { type: String, default: "", trim: true, required: function () {
+    content: { ...protectedString, default: "", required: function () {
       const update = this.getUpdate?.();
       return (this.type || update?.$set?.type || update?.$setOnInsert?.type) !== "image";
-    }, validate: value => characterCount(value || "") <= 2000 },
-    caption: { type: String, default: "", validate: value => characterCount(value || "") <= 1000 },
+    }, validate: value => characterCount(decrypt(value) || "") <= 2000 },
+    caption: { ...protectedString, default: "", validate: value => characterCount(decrypt(value) || "") <= 1000 },
     attachments: { type: [{ _id: false, key: { type: String, required: true }, thumbKey: String, mime: { type: String, required: true }, size: { type: Number, required: true }, width: Number, height: Number }],
       default: [], validate: { validator: value => value.length <= 10, message: "At most ten images" } },
     tempId: { type: String, maxlength: 100 },
@@ -24,7 +25,7 @@ const messageSchema = new mongoose.Schema(
     expireAt: { type: Date, default: null },
     hasMedia: { type: Boolean, default: false },
   },
-  { timestamps: { createdAt: true, updatedAt: false } }
+  { timestamps: { createdAt: true, updatedAt: false }, toObject: { getters: true }, toJSON: { getters: true } }
 );
 
 messageSchema.index({ conversation: 1, createdAt: -1 });

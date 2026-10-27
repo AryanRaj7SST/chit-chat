@@ -19,7 +19,7 @@ const pass = label => console.log(`PASS - ${label}`);
 try {
   await page.goto(`${base}/register`);
   await page.getByLabel("Name", { exact: true }).fill("Media UI Test");
-  await page.getByLabel("Email", { exact: true }).fill(`media-${randomUUID()}@example.com`);
+  await page.getByLabel("Email", { exact: true }).fill(`media-${process.env.SECURITY_RUN_ID || randomUUID()}@example.com`);
   await page.getByLabel("Password", { exact: true }).fill(`Test-${randomUUID()}`);
   await page.getByRole("button", { name: "Sign up", exact: true }).click();
   await page.locator("aside").getByRole("button").filter({ hasText: "Buddy AI" }).click();

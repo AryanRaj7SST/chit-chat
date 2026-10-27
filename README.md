@@ -1,6 +1,6 @@
 # MERN Chat
 
-A private, one-to-one messaging app built with React and Express. Users find and add friends, exchange live messages, and reopen saved conversations after a refresh. Buddy AI is a built-in automated companion using local keyword rules. MongoDB stores the data; Socket.IO delivers live updates.
+A hardened, privacy-focused, one-to-one messaging app built with React and Express. Users find and add friends, exchange live messages, and reopen saved conversations after a refresh. Buddy AI is a built-in automated companion using local keyword rules. MongoDB stores the data; Socket.IO delivers live updates. The server can read messages; this app is not end-to-end encrypted. See [SECURITY.md](SECURITY.md) for the threat model.
 
 The repository includes deployment configuration and a recording kit. Hosted deployment and production verification have **not** been established by the local checks described here.
 
@@ -8,7 +8,7 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 
 ### Core
 
-- Register/login with bcrypt-hashed passwords and a seven-day JWT; restore sessions after refresh.
+- Register/login with cost-12 bcrypt passwords and a versioned 24-hour JWT; restore sessions after refresh. Changing a password or logging out all devices revokes existing tokens and disconnects sockets.
 - Search by at least two characters of a name/email; non-friend emails are masked. Send, accept, decline, or cancel friend requests before starting a human chat.
 - Unfriend without deleting saved history; re-friending restores the same conversation. Old history remains membership-readable, but every human send/typing event requires a current friendship.
 - Buddy AI is pinned first and always appears online. Its local rules include greetings, time/date, eight rotating jokes, and 242 built-in learning entries covering DSA, JavaScript, React, web development, backend, and CS basics. Try topics, dsa, more, random, or quiz me. Code examples have Copy buttons; Buddy-only quick replies use the usual message send path. No external AI API is used.
@@ -22,11 +22,12 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 
 - **Persistent unread counts:** computed on the server from per-participant read positions.
 - **Message ticks:** one check after send acknowledgement, two after the other user's socket acknowledges delivery, violet two after read. Read timestamps honor `settings.readReceipts` (default true); unread counts still work privately.
-- **Message tools:** validated replies with quote jumps/swipe, six reactions, 15-minute text edits, per-user hiding, and sender-only deletion for everyone within 48 hours. Older history loads at the top; in-chat search is literal and membership-protected.
+- **Message tools:** validated replies with quote jumps/swipe, six reactions, 15-minute text edits, per-user hiding, and sender-only deletion for everyone within 48 hours. Older history loads at the top; literal, membership-protected search scans the latest 500 visible messages and returns at most 30 matches.
 - **Chat management and profiles:** three explicit pins, per-user mute/archive, an Archived row, blocking/unblocking, name/About edits, private original avatars with 512px thumbnails, and persisted last seen.
 - **Disappearing messages:** Off/1 hour/24 hours/7 days for new messages, system notices, and media-first expiry cleanup. Browser notifications require a click to enable, appear only while the open tab is hidden, respect mute, and hide previews by default.
 - **Theme system:** light/dark toggle on auth pages and in the sidebar; first visit follows the system preference. Semantic CSS tokens, pre-React initialization, and localStorage persistence use Tailwind v4's class-based theme support. See the [theme audit and screenshots](docs/THEME_AUDIT.md).
-- **Photos:** up to ten JPEG/PNG/WebP/GIF files per message, 25 MiB each, uploaded with original bytes intact. Separate thumbnails, captions, progress/cancel/retry, paste/drop, a zoomable viewer, and original downloads use private storage and signed URLs. Buddy refuses photos.
+- **Photos:** up to ten JPEG/PNG/WebP/GIF files per message, 25 MiB each. The default-on profile toggle removes JPEG APP1 Exif bytes without re-encoding pixels; other bytes remain intact. Invalid parsing preserves the original with a warning. Separate thumbnails, captions, progress/cancel/retry, paste/drop, a zoomable viewer, and original downloads use private storage and signed URLs. Buddy refuses photos.
+- **Security:** Helmet, bounded bodies/socket packets, per-process rate limits, a deployment-specific CSP, and AES-256-GCM encryption of message text/captions and profile About text at rest. This protects encrypted fields in a database dump without its key, not against a compromised server. Media bytes use private storage rather than this field-encryption layer.
 - **Camera and emoji:** explicit camera capture with cleanup and native-camera fallback; a lazy-loaded themed emoji picker and larger one-to-three-emoji bubbles. Camera automation uses simulated hardware; real devices and production R2 still require manual checks.
 
 There are no groups, calls, status posts, voice notes, end-to-end encryption, or service-worker push notifications. Uploads are limited to supported image formats; HEIC, SVG, HTML, and other attachments are refused. History initially loads 50 messages and pages older messages as you scroll upward. Presence is held in one backend process's memory; multi-instance coordination is not implemented. The optional full reaction picker is omitted; six reactions are available.
@@ -126,6 +127,7 @@ All values below are **examples/placeholders**, not working credentials.
 | `NODE_ENV` | `development` | Use `production` on Render; production blocks demo seeding |
 | `MONGO_URI` | `mongodb+srv://<user>:<encoded-password>@<cluster>/mern-chat?retryWrites=true&w=majority` | Private database URI |
 | `JWT_SECRET` | `<your-long-random-private-secret>` | Shared signing/verification secret for REST and Socket.IO |
+| `MESSAGE_ENC_KEY` | `<base64-encoded-32-random-bytes>` | Backend-only field encryption key; required in production; keep a recovery backup |
 | `CLIENT_URL` | `http://localhost:5173` | Allowed frontend origins; accepts a comma-separated list |
 | `NODE_VERSION` | `24` | Render runtime setting, already specified in render.yaml |
 | `STORAGE_DRIVER` | `local` | Development default; production must use `r2` |
@@ -136,7 +138,7 @@ All values below are **examples/placeholders**, not working credentials.
 | `R2_BUCKET` | `<private-bucket-name>` | Private bucket with public access disabled |
 | `MESSAGE_EDIT_WINDOW_MS` | `900000` | Optional development test override; production always enforces 15 minutes |
 
-`MONGO_URI` and `JWT_SECRET` are required at startup. For multiple clients, `CLIENT_URL` can be `http://localhost:5173,https://your-client.vercel.app`. Whitespace and trailing slashes are removed; use exact origins without paths. HTTP and Socket.IO polling share this CORS list. JWT and membership checks apply independently of CORS.
+`MONGO_URI` and `JWT_SECRET` are required at startup. Production also requires `MESSAGE_ENC_KEY`; development without it warns and writes plaintext. From `server`, `npm run key:create` creates the key in ignored `.env` without printing it and refuses to replace an existing key. Back it up privately. For existing data, follow the backup/migration steps in [DEPLOYMENT.md](docs/DEPLOYMENT.md#security-hardening-rollout-phase-58) before enabling real traffic. For multiple clients, `CLIENT_URL` can be `http://localhost:5173,https://your-client.vercel.app`. Whitespace and trailing slashes are removed; use exact origins without paths. HTTP and Socket.IO polling share this CORS list. JWT and membership checks apply independently of CORS.
 
 For local development, `server/.uploads` stores images and stays ignored by Git.
 If you change `PORT`, update `PUBLIC_API_URL` too. Never use this ephemeral local
@@ -149,8 +151,11 @@ and its separate browser CORS policy using [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 | --- | --- | --- |
 | `VITE_API_URL` | `http://localhost:5000/api` | Absolute backend API URL; must end in `/api` |
 | `VITE_SOCKET_URL` | `http://localhost:5000` | Backend origin; no `/api` or `/socket.io` suffix |
+| `CSP_R2_ORIGIN` | `https://<account-id>.r2.cloudflarestorage.com` | Public storage origin used only by `configure:csp`; never storage credentials |
 
 Both client variables are required public build-time values. Missing/malformed URLs fail validation instead of using the frontend host. Restart Vite after editing `.env`; rebuild/redeploy for a production change. Never put secrets in `VITE_*` variables.
+
+Before Vercel deployment, run `npm run configure:csp` in `client` using your actual public API/socket/storage URLs. Review and commit `vercel.json`: its committed `example.invalid` origins are placeholders and Vercel does not substitute environment variables inside static JSON headers. See the deployment guide.
 
 ### Verification-script settings
 
@@ -260,6 +265,8 @@ Paths include `/api`. Protected requests require `Authorization: Bearer <token>`
 | POST | `/api/auth/register` | Public | `{ name, email, password }`; 201 with `{ success, token, user }` |
 | POST | `/api/auth/login` | Public | `{ email, password }`; `{ success, token, user }` |
 | GET | `/api/auth/me` | JWT | `{ success, user }` |
+| POST | `/api/auth/logout-all` | JWT | Increments tokenVersion and disconnects all account sockets; login again |
+| POST | `/api/auth/change-password` | JWT | `{ currentPassword, newPassword }`; validates current password, changes hash, revokes all tokens/sockets |
 | GET | `/api/users?q=<search>` | JWT | Query needs 2+ characters; up to 20 non-bot results with _id, name, maskedEmail, relationship and optional pending requestId; full email only for friends |
 | POST | `/api/friends/requests` | JWT | `{ userId }`; 201 pending `{ success, status, requestId }`, or 200 auto-accepted `{ success, status, user }` for a mutual request; duplicates 409, 20 attempts/user/hour |
 | GET | `/api/friends/requests` | JWT | `{ success, incoming, outgoing }`; items `{ _id, user: { _id, name }, createdAt }` |
@@ -277,7 +284,7 @@ Paths include `/api`. Protected requests require `Authorization: Bearer <token>`
 | POST | `/api/users/:id/block` | JWT | Block either direction for messaging/discovery, remove friendship/pending requests; no self/Buddy block |
 | DELETE | `/api/users/:id/block` | JWT | Remove only the caller's block; does not restore friendship |
 
-Registration requires a 2–50 character name, valid email, and password of at least six characters. Public profiles include _id, name, email, createdAt and isBot, never password hashes. Search returns a different privacy-preserving shape; relationship is none, friends, request_sent or request_received. The request limiter is in memory per backend process and resets on restart.
+Registration requires a 2–50 character name, valid email, and password of at least eight Unicode code points, at most 72 UTF-8 bytes, excluding a small common-password list. Public profiles include _id, name, email, createdAt and isBot, never password hashes. Search returns a different privacy-preserving shape; relationship is none, friends, request_sent or request_received. Limits are in memory per backend process and reset on restart: login 10/15 minutes/IP+email, registration 5/hour/IP, authenticated API 300/minute/user. See SECURITY.md for socket limits and deployment boundaries.
 
 Image routes (no existing routes were renamed):
 
@@ -374,6 +381,9 @@ Every script below is defined in that directory's `package.json`.
 | `server` | `npm run test:kb` | Knowledge counts, retrieval, commands, bounded sessions, and runnable snippets; no server needed |
 | `server` | `npm run verify` | API/socket integration tests against a running backend |
 | `server` | `npm run seed:demo` | Development-only demo accounts |
+| `server` | `npm run key:create` | Create an encryption key in ignored .env without displaying it; refuses replacement |
+| `server` | `npm run migrate:encryption` | Dry-run plaintext migration; append `-- --apply` only after backup and key configuration |
+| `server` | `npm run verify:security -- --browser` | Isolated development backend, API/build/browser checks and disposable-account cleanup; Vite on 5174 required |
 | `client` | `npm run dev` | Vite development server |
 | `client` | `npm run build` | Validate URL settings and create dist/ |
 | `client` | `npm run preview` | Preview the built frontend |
@@ -381,6 +391,8 @@ Every script below is defined in that directory's `package.json`.
 | `client` | `npm run lint` | Oxlint; currently reports non-failing React context/effect warnings |
 | `client` | `npm run e2e` | Playwright with two fresh user contexts and an extra tab |
 | `client` | `npm run test:media` | Emoji, touch-emulation, and simulated-camera lifecycle checks |
+| `client` | `npm run test:security` | Built assets under CSP, signed avatar, profile privacy toggle and multi-context token revocation |
+| `client` | `npm run configure:csp` | Fill static Vercel CSP from public API/socket/storage origins before deployment |
 
 Install dependencies with `npm ci` in each package. In `client`, install Chromium once:
 

@@ -51,7 +51,7 @@ Use **one** of the following creation methods.
 3. Choose branch **main** and Blueprint path **render.yaml** at the repository
    root. Name the Blueprint as you prefer.
 4. Review the web service configuration below. Supply `MONGO_URI`, `JWT_SECRET`,
-   and `CLIENT_URL` when prompted for unsynced environment variables.
+   `MESSAGE_ENC_KEY`, storage credentials, and `CLIENT_URL` when prompted for unsynced environment variables.
 5. Click **Deploy Blueprint** and open the created web service's **Logs**.
 
 These steps follow [Render's Blueprint setup](https://render.com/docs/infrastructure-as-code).
@@ -76,6 +76,7 @@ See [Render's Express guide](https://render.com/docs/deploy-node-express-app).
 | --- | --- |
 | `MONGO_URI` | Your private Atlas URI containing `/mern-chat` |
 | `JWT_SECRET` | A new, long random secret from your password manager; store it only on Render |
+| `MESSAGE_ENC_KEY` | A persistent base64-encoded 32-byte random key; backend only, backed up separately from the database |
 | `CLIENT_URL` | Initially `http://localhost:5173`; replace with the actual Vercel origin after step 3 |
 | `NODE_ENV` | `production` |
 | `NODE_VERSION` | `24` |
@@ -86,7 +87,7 @@ See [Render's Express guide](https://render.com/docs/deploy-node-express-app).
 | `R2_BUCKET` | Name of your PRIVATE R2 bucket |
 
 Use at least 32 random bytes for the JWT signing secret. Do not reuse an example
-value. The Blueprint sets the last two values automatically. Render supplies
+value. The Blueprint sets NODE_ENV and NODE_VERSION automatically. Render supplies
 `PORT`; leave it unset in the dashboard. The app reads it and binds `0.0.0.0`.
 Node 24 is selected explicitly because an unbounded `engines.node` range can
 otherwise select a newer major release.
@@ -103,6 +104,10 @@ This is an expected response, not a claim that a deployed service has been
 verified. The server connects to MongoDB before it starts listening.
 
 ## 3. Vercel frontend second
+
+Before importing, complete the CSP configuration in the security rollout section
+below and push that public configuration. The sample `example.invalid` origins
+are intentionally unusable; deploying them will block connections and media.
 
 1. Sign in at [Vercel](https://vercel.com/), click **Add New → Project**, connect
    GitHub if needed, and **Import** `AryanRaj7SST/chit-chat`.
@@ -243,8 +248,10 @@ No R2 bucket or credentials were created or exercised during local testing.
    cannot request its media URL. Try GIF/PNG transparency and a rotated camera
    JPEG. An unsigned bucket URL must remain inaccessible.
 
-The client uploads exact original bytes to ten-minute signed PUT URLs and uses
-separate JPEG thumbnails. If-None-Match prevents overwriting an existing object;
+The client uploads original image data to ten-minute signed PUT URLs and uses
+separate JPEG thumbnails. Default-on JPEG privacy removal changes APP1 Exif
+metadata bytes without re-encoding pixel data; disable the profile toggle when
+testing full-file hashes with EXIF-bearing JPEGs. If-None-Match prevents overwriting an existing object;
 R2 documents atomic create-once conditional writes in its
 [S3 compatibility reference](https://developers.cloudflare.com/r2/api/s3/api/).
 Signed download URLs last 60 seconds; clients cache them in memory for 50 seconds.
@@ -288,6 +295,105 @@ Browser notifications need HTTPS and explicit user permission; no provider push
 credentials or service worker were added. MESSAGE_EDIT_WINDOW_MS is optional
 for development tests and ignored in production. Production always uses the
 15-minute edit limit and 48-hour delete-for-everyone limit.
+
+## Security hardening rollout (Phase 5.8)
+
+This app is hardened, privacy-focused. The server can read messages. Encryption
+at rest protects encrypted text fields in a leaked database dump without its
+key; it does not protect against a compromised server. Read [SECURITY.md](../SECURITY.md).
+
+### Persistent key and existing data
+
+1. Back up the database privately. Schedule a maintenance window and pause
+   application writes before migrating. Do not run a global migration against
+   a database with an unknown encryption key.
+2. From `server`, run `npm run key:create` only if no key is configured. It
+   generates 32 random bytes directly into ignored `server/.env`, never prints
+   them, and refuses accidental replacement. Open that file privately in your
+   editor, save the key in a password manager, and copy it into Render's
+   **Environment → Add Environment Variable → MESSAGE_ENC_KEY**. Do not show the
+   file while recording. An existing deployment must reuse its existing key.
+3. Ensure the migration process has the SAME `MESSAGE_ENC_KEY` and intended
+   `MONGO_URI` privately configured. From `server`, run:
+
+   ```sh
+   npm run migrate:encryption
+   npm run migrate:encryption -- --apply
+   npm run migrate:encryption
+   ```
+
+   The first command is a dry run. Review counts before applying; the final dry
+   run should report zero pending changes. The script encrypts Message.content,
+   Message.caption, and User.about using conditional native updates and skips
+   already-encrypted values. It authenticates existing v1 values and stops on
+   a wrong key, malformed envelope, or ambiguous legacy v1-prefixed text.
+   Investigate privately rather than overwriting unreadable data.
+4. Save Render's environment and redeploy, then resume writes after verification.
+   Production startup refuses a missing/invalid key. Development without a key
+   warns and writes plaintext; it is not an encrypted deployment. Old unprefixed
+   plaintext remains readable during migration. Old backups remain plaintext.
+5. Retain the key for recovery. Changing it makes existing encrypted text
+   unreadable; automatic key rotation is not implemented. All pre-hardening JWTs
+   are invalidated by the new token format; sign in again. New JWTs last 24 hours.
+
+No full-database migration was performed during local verification. The isolated
+security harness encrypts only disposable fixtures using a temporary child-process
+key, removes those accounts afterward, and never saves that key to `.env`.
+Never use that ephemeral test key for actual accounts.
+
+### Fill the static frontend CSP before deployment
+
+`client/vercel.json` contains sample API/socket/R2 origins and security headers.
+Vercel does not interpolate environment placeholders in this static file. The
+configuration must contain your actual public origins before Vercel reads it;
+changing a build-time environment variable alone does not update these headers.
+
+1. In ignored `client/.env.production.local` (or your local process environment),
+   set public values only:
+
+   ```text
+   VITE_API_URL=https://<actual-render-host>/api
+   VITE_SOCKET_URL=https://<actual-render-host>
+   CSP_R2_ORIGIN=https://<account-id>.r2.cloudflarestorage.com
+   ```
+
+   Use the exact R2 S3 origin used by signed URLs; do not enable public bucket
+   access or put R2 credentials here. API/socket origins can be the same.
+2. From `client`, run `npm run configure:csp`. Review `git diff -- vercel.json`.
+   The helper writes the API origin, socket HTTPS and WSS origins, and R2 origin
+   into connect-src; images allow self/blob/data/API/R2. Scripts allow self only;
+   styles allow self and unsafe-inline for UI-library styles. Other directives
+   deny framing/objects and restrict form actions/base URLs to self.
+3. Commit and push the public `vercel.json` origin configuration before importing
+   or redeploying Vercel. Keep the SPA rewrite and no-referrer/nosniff headers.
+   Permissions-Policy allows camera only for self and denies microphone,
+   geolocation, and payment. No secret is needed by this helper.
+4. Keep Vercel's `VITE_API_URL`/`VITE_SOCKET_URL` settings aligned, redeploy, and
+   check DevTools for CSP violations while logging in, chatting, opening the
+   emoji picker, viewing/downloading images, changing an avatar, and using camera.
+   Repeat CSP generation/review/deployment whenever a public backend/storage
+   origin changes. Preview deployments need their own matching configuration.
+
+See [Vercel header configuration](https://vercel.com/docs/project-configuration/vercel-json#headers).
+The local production-asset browser test exercises the same policy with local
+origins, not an actual Vercel deployment or R2 bucket.
+
+### Proxy, rate limits, and search checks
+
+Production trusts one immediate proxy hop for Render's managed ingress;
+development trusts loopback only. Confirm on Render that different clients
+produce distinct limiter identities and forged forwarded chains cannot bypass
+limits. Do not expose a shorter direct ingress path. Reassess this setting if
+adding another proxy; see [Express proxy guidance](https://expressjs.com/en/guide/behind-proxies/).
+In-memory rate limits, presence, and socket caps assume one backend process;
+multi-instance deployment needs shared limits and a Socket.IO adapter.
+
+Message search now decrypts only the last 500 visible messages of the authorized
+conversation in server memory and returns up to 30 literal matches. Older
+messages can be paged but will not appear in search. No plaintext search index
+is stored. The profile's photo-location toggle defaults ON; invalid JPEG parsing
+keeps the original and warns, and EXIF removal may change orientation. XMP/IPTC
+and non-JPEG metadata are outside this removal scope.
 
 ## Preparation verification evidence (Phase 6)
 

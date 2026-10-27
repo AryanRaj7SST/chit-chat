@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { getCorsOptions } from "./config/cors.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -11,6 +12,11 @@ import { localGet, localPut, mediaUrl, signUpload } from "./controllers/uploadCo
 import { notFound, errorHandler } from "./middleware/error.js";
 
 const app = express();
+// Render is the single trusted ingress proxy. Do not use trust proxy=true.
+app.set("trust proxy", process.env.NODE_ENV === "production" ? 1 : "loopback");
+app.disable("x-powered-by");
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" }, referrerPolicy: { policy: "no-referrer" }, strictTransportSecurity: process.env.NODE_ENV === "production" ? undefined : false,
+  contentSecurityPolicy: { directives: { "upgrade-insecure-requests": process.env.NODE_ENV === "production" ? [] : null } } }));
 
 app.use(cors(getCorsOptions()));
 app.use(express.json({ limit: "100kb" }));

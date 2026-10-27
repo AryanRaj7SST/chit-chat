@@ -53,7 +53,8 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, images, r
     {reply && <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border-l-4 border-primary bg-surface-2 px-3 py-1 text-sm text-text"><span className="min-w-0 flex-1 truncate">Replying to: {reply.deletedAt ? "This message was deleted" : reply.type === "image" ? `Photo: ${reply.caption || ""}` : reply.content}</span><button type="button" className="media-control" aria-label="Cancel reply" onClick={onCancelReply}>×</button></div>}
     {images.preparing && <p role="status" className="mb-2 text-sm text-muted">Preparing photo previews…</p>}
     {images.drafts.length > 0 && <div className="mb-2 min-w-0 rounded-xl border border-border bg-surface-2 p-2">
-      <p className="mb-1 text-xs font-medium text-text">Original quality · {images.drafts.length}/10</p>
+      <p className="mb-1 text-xs font-medium text-text">Original pixel quality · {images.drafts.length}/10</p>
+      {images.drafts.some(item => item.metadataWarning) && <p role="alert" className="text-xs text-danger-ink">Location metadata removal was skipped for a photo; it may still contain location data.</p>}
       <div className="flex min-w-0 gap-2 overflow-x-auto pb-2" aria-label="Photo previews">
         {images.drafts.map(item => <div key={item.id} className="relative w-28 shrink-0 rounded-lg border border-border bg-surface p-1">
           <img src={item.localUrl} alt="Selected photo preview" className="h-20 w-full rounded object-cover" />

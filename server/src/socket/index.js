@@ -10,6 +10,7 @@ import Upload from "../models/Upload.js";
 import User from "../models/User.js";
 import { registerMessageActions } from "./messageActions.js";
 import { messageViews, notExpired } from "../utils/messageView.js";
+import { hardenSocket } from "../security/socketPolicy.js";
 import { canMessage, getFriendIds } from "../utils/friendship.js";
 import { ensureBuddy, getBuddyReply } from "../bot/buddy.js";
 
@@ -24,9 +25,11 @@ const getConversationForUser = (conversationId, userId) => {
 export function initSocket(httpServer) {
   // userId -> Set of socket ids (a user can have several tabs/devices)
   const onlineUsers = new Map();
+  const pendingSockets = new Map();
   const announcedOnline = new Set();
   const io = new Server(httpServer, {
     cors: getCorsOptions(),
+    maxHttpBufferSize: 1024 * 1024,
   });
   currentIO = io;
   io.friendshipRevision = 0;
@@ -74,12 +77,19 @@ export function initSocket(httpServer) {
   io.use(async (socket, next) => {
     const user = await getUserFromToken(socket.handshake.auth?.token);
     if (!user || user.isBot) return next(new Error("Authentication error"));
-    socket.user = { id: String(user._id), name: user.name };
+    const id = String(user._id), pending = pendingSockets.get(id) || new Set();
+    if ((onlineUsers.get(id)?.size || 0) + pending.size >= 10) return next(new Error("Too many active devices"));
+    pending.add(socket.id); pendingSockets.set(id, pending);
+    const release = () => { pending.delete(socket.id); if (!pending.size) pendingSockets.delete(id); socket.conn.off("close", release); };
+    socket.conn.once("close", release); socket.data.releaseReservation = release;
+    socket.user = { id, name: user.name };
     next();
   });
 
   io.on("connection", (socket) => {
     const userId = socket.user.id;
+    socket.data.releaseReservation?.();
+    hardenSocket(socket);
     registerMessageActions(io, socket);
     socket.join(`user:${userId}`);
 
@@ -222,16 +232,17 @@ export function initSocket(httpServer) {
     const typingVersions = new Map();
     const relayTyping = (isTyping) => async (payload) => {
       const id = payload?.conversationId;
-      if (typeof id !== "string" || !mongoose.isValidObjectId(id)) return;
+      if (typeof id !== "string" || !mongoose.isValidObjectId(id)) { if (socket.data.latestTyping.get(id) === payload) socket.data.latestTyping.delete(id); return; }
+      if (socket.data.latestTyping.get(id) !== payload) return;
       const version = ++typingSequence;
       typingVersions.set(id, version);
       try {
         const conversation = await getConversationForUser(id, userId);
         // Database lookups can finish out of order. Relay only the newest
         // typing state for this socket/conversation, including rapid stop/start.
-        if (!conversation || !socket.connected || typingVersions.get(id) !== version) return;
+        if (!conversation || !socket.connected || typingVersions.get(id) !== version || socket.data.latestTyping.get(id) !== payload) return;
         const otherId = conversation.participants.find((participant) => String(participant) !== userId);
-        if (!(await canMessage(userId, otherId)) || typingVersions.get(id) !== version) return;
+        if (!(await canMessage(userId, otherId)) || typingVersions.get(id) !== version || socket.data.latestTyping.get(id) !== payload) return;
         const rooms = conversation.participants
           .filter((p) => String(p) !== userId)
           .map((p) => `user:${p}`);
@@ -242,6 +253,7 @@ export function initSocket(httpServer) {
         console.error("typing relay failed:", err.message);
       } finally {
         if (typingVersions.get(id) === version) typingVersions.delete(id);
+        if (socket.data.latestTyping.get(id) === payload) socket.data.latestTyping.delete(id);
       }
     };
     socket.on("typing:start", relayTyping(true));

@@ -16,7 +16,7 @@ function SignedPhoto({ attachment, original = false, alt, className, onLoad }) {
   }, [key, attachment.localUrl, retry]);
   if (!attachment.localUrl && !key) return <span className="flex h-full min-h-24 items-center justify-center p-3 text-sm text-muted">Photo · open original</span>;
   if (error) return <span className="flex h-full flex-col items-center justify-center gap-2 p-3 text-sm text-muted">Photo unavailable<button type="button" className="media-control" onClick={event => { event.stopPropagation(); setRetry(value => value + 1); }}>Retry photo</button></span>;
-  return <img src={url || undefined} loading={original ? "eager" : "lazy"} alt={alt} draggable={false} onLoad={() => { setLoaded(true); onLoad?.(); }} onError={() => { if (retry < 1) setRetry(value => value + 1); else setError(true); }} className={`${className} ${loaded ? "" : "blur-sm"}`} />;
+  return <img referrerPolicy="no-referrer" src={url || undefined} loading={original ? "eager" : "lazy"} alt={alt} draggable={false} onLoad={() => { setLoaded(true); onLoad?.(); }} onError={() => { if (retry < 1) setRetry(value => value + 1); else setError(true); }} className={`${className} ${loaded ? "" : "blur-sm"}`} />;
 }
 
 function Lightbox({ attachments, initial, sender, messageId, onClose }) {
@@ -43,7 +43,7 @@ function Lightbox({ attachments, initial, sender, messageId, onClose }) {
     setDownloading(true);
     try {
       const a = attachments[index];
-      const response = await fetch(await mediaUrl(a.key, true));
+      const response = await fetch(await mediaUrl(a.key, true), { referrerPolicy: "no-referrer" });
       if (!response.ok) throw new Error();
       const blob = await response.blob(), url = URL.createObjectURL(blob);
       const link = document.createElement("a"); link.href = url;

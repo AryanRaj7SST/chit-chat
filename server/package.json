@@ -4,7 +4,10 @@
   "description": "",
   "main": "src/server.js",
   "scripts": {
-    "test": "node --test scripts/deployment-test.mjs scripts/buddy-test.mjs scripts/media-test.mjs",
+    "test": "node --test scripts/deployment-test.mjs scripts/buddy-test.mjs scripts/media-test.mjs scripts/security-test.mjs",
+    "migrate:encryption": "node scripts/migrate-encryption.mjs",
+    "key:create": "node scripts/create-encryption-key.mjs",
+    "verify:security": "node scripts/security-verify.mjs",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "seed:demo": "node scripts/seed-demo.mjs",
@@ -25,6 +28,7 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",
     "express": "^4.22.3",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.11.4",
     "socket.io": "^4.8.4"

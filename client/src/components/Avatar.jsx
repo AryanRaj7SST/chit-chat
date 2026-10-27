@@ -12,7 +12,7 @@ export default function Avatar({ name, avatar, size = "md", online }) {
       <div
         className={`brand-gradient flex items-center justify-center rounded-full font-semibold text-on-primary ${sizes[size]}`}
       >
-        {url ? <img src={url} alt={`Avatar of ${name}`} onError={() => setUrl("")} className="h-full w-full rounded-full object-cover" /> : getInitials(name)}
+        {url ? <img referrerPolicy="no-referrer" src={url} alt={`Avatar of ${name}`} onError={() => setUrl("")} className="h-full w-full rounded-full object-cover" /> : getInitials(name)}
       </div>
       {online !== undefined && (
         <span

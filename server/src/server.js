@@ -13,6 +13,7 @@ import Block from "./models/Block.js";
 import ConversationSettings from "./models/ConversationSettings.js";
 import { getStorage } from "./storage/index.js";
 import { startExpirySweeper } from "./services/expiry.js";
+import { encryptionKey } from "./security/encryption.js";
 
 const PORT = Number(process.env.PORT || 5000);
 if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
@@ -26,6 +27,7 @@ if (!process.env.JWT_SECRET || !process.env.MONGO_URI) {
 }
 
 const server = http.createServer(app);
+if (!encryptionKey()) console.warn("Development mode: message encryption at rest is disabled until MESSAGE_ENC_KEY is configured");
 getStorage(); // Fail closed before startup if production storage is misconfigured.
 const io = initSocket(server);
 let stopSweeper;

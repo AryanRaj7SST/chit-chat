@@ -5,7 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { chromium, expect as playwrightExpect } from "@playwright/test";
 
 const base = process.env.E2E_BASE_URL || "http://localhost:5173";
-const run = randomUUID();
+const run = process.env.SECURITY_RUN_ID || randomUUID();
 const nameA = `E2E A ${run.slice(0, 8)}`;
 const nameB = `E2E B ${run.slice(0, 8)}`;
 const browser = await chromium.launch();
@@ -381,7 +381,7 @@ try {
     const response = await fetch(`${apiUrl}/conversations`, { headers: { Authorization: `Bearer ${localStorage.getItem("chat_token")}` } });
     const data = await response.json();
     const conversation = data.conversations.find(item => !item.participants.some(user => user.isBot));
-    try { for (let i = 0; i < 55; i++) await socket.timeout(10000).emitWithAck("message:send", { conversationId: conversation._id, content: `Older-history fixture ${i}`, tempId: `history-${i}` }); }
+    try { for (let i = 0; i < 55; i++) { const payload = { conversationId: conversation._id, content: `Older-history fixture ${i}`, tempId: `history-${i}` }; let result = await socket.timeout(10000).emitWithAck("message:send", payload); while (!result.success && result.message === "Slow down") { await new Promise(resolve => setTimeout(resolve, 10000)); result = await socket.timeout(10000).emitWithAck("message:send", payload); } if (!result.success) throw new Error("History fixture send failed"); } }
     finally { socket.disconnect(); }
   });
   await pageA.reload(); await openChat(pageA, nameB);
@@ -447,8 +447,8 @@ try {
   // Wait for the prior fallback before checking the next exchange's count.
   await expect(botMessages).toHaveCount(beforeTopics + 6);
   await chips.getByRole("button", { name: "quiz me", exact: true }).click();
-  await expect(pageA.locator("section").getByText("Think of an explanation", { exact: false })).toBeVisible();
   await expect(botMessages).toHaveCount(beforeTopics + 8);
+  await expect(botMessages.last()).toContainText("Think of an explanation");
   await send(pageA, "answer");
   await expect(botMessages).toHaveCount(beforeTopics + 10);
   expect(await botMessages.last().innerText()).not.toContain("Type quiz me");

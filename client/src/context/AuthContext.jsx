@@ -49,9 +49,11 @@ export function AuthProvider({ children }) {
     saveSession(data);
   };
   const updateProfile = async fields => { const { data } = await api.patch("/users/me", fields); setUser(data.user); };
+  const logoutAll = async () => { await api.post("/auth/logout-all"); logout(); };
+  const changePassword = async fields => { await api.post("/auth/change-password", fields); logout(); };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile, logoutAll, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

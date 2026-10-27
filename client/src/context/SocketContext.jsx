@@ -1,5 +1,6 @@
 import { createContext, useEffect, useRef, useState } from "react";
 import api from "../services/api";
+import toast from "react-hot-toast";
 import { useAuth } from "../hooks/useAuth";
 import { createSocket } from "../services/socket";
 
@@ -35,9 +36,10 @@ export function SocketProvider({ children }) {
         new Notification("MERN Chat", { body: hide ? "You have a new message." : message.type === "image" ? "Photo" : message.content.slice(0, 120), tag: message.conversation });
       } catch { /* Unsupported/denied notifications never interrupt messaging. */ }
     };
-    const onDisconnect = () => {
+    const onDisconnect = reason => {
       setConnected(false);
       setOnlineIds(new Set());
+      if (reason === "io server disconnect") window.dispatchEvent(new Event("auth:logout"));
     };
     const onList = (ids) => setOnlineIds(new Set(ids));
     const onStatus = ({ userId: id, online }) =>
@@ -48,6 +50,7 @@ export function SocketProvider({ children }) {
         return next;
       });
     const onError = (err) => {
+      if (err.message === "Too many active devices") toast.error("Too many active devices. Close another tab or log out of all devices from your profile.");
       if (err.message === "Authentication error") {
         s.disconnect();
         window.dispatchEvent(new Event("auth:logout"));

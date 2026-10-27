@@ -6,6 +6,7 @@ import AuthLayout, { Field } from "../components/AuthLayout";
 import { useAuth } from "../hooks/useAuth";
 import { getErrorMessage } from "../services/api";
 import { isValidEmail } from "../utils/format";
+import { passwordError } from "../utils/passwords";
 
 export default function Register() {
   const { register } = useAuth();
@@ -22,7 +23,7 @@ export default function Register() {
     const email = form.email.trim();
     if (name.length < 2) return setError("Name must be at least 2 characters");
     if (!isValidEmail(email)) return setError("Please enter a valid email address");
-    if (form.password.length < 6) return setError("Password must be at least 6 characters");
+    const policyError = passwordError(form.password); if (policyError) return setError(policyError);
     try {
       setBusy(true);
       await register(name, email, form.password);
@@ -50,7 +51,7 @@ export default function Register() {
       <form onSubmit={submit} className="space-y-4" noValidate>
         <Field label="Name" name="name" value={form.name} onChange={update} autoComplete="name" placeholder="Your name" />
         <Field label="Email" type="email" name="email" value={form.email} onChange={update} autoComplete="email" placeholder="you@example.com" />
-        <Field label="Password" type="password" name="password" value={form.password} onChange={update} autoComplete="new-password" placeholder="At least 6 characters" />
+        <Field label="Password" type="password" name="password" value={form.password} onChange={update} autoComplete="new-password" placeholder="At least 8 characters; avoid common passwords" />
         {error && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-ink">{error}</p>}
         <button
           type="submit"

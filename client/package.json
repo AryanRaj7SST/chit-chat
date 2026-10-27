@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "configure:csp": "node scripts/configure-csp.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "e2e": "node scripts/e2e-test.mjs",
     "test:media": "node scripts/media-ui-test.mjs",
-    "test": "node --test scripts/messages-test.mjs scripts/environment-test.mjs scripts/message-content-test.mjs"
+    "test:security": "node scripts/security-ui-test.mjs",
+    "test": "node --test scripts/messages-test.mjs scripts/environment-test.mjs scripts/message-content-test.mjs scripts/jpeg-privacy-test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

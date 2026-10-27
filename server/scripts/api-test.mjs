@@ -9,7 +9,7 @@ const baseUrl = new URL(BASE);
 if (!["http:", "https:"].includes(baseUrl.protocol) || baseUrl.pathname !== "/" || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash)
   throw new Error("BASE_URL must be the backend HTTP(S) origin, without /api or credentials");
 const API = `${BASE}/api`;
-const run = Date.now();
+const run = process.env.SECURITY_RUN_ID || Date.now();
 let failed = 0;
 
 const check = (name, ok) => {
@@ -18,11 +18,11 @@ const check = (name, ok) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const call = async (method, path, body, token) => {
+const call = async (method, path, body, token, headers = {}) => {
   const res = await fetch(`${API}${path}`, {
     signal: AbortSignal.timeout(10000),
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: res.status, data: await res.json() };
@@ -47,7 +47,8 @@ async function main() {
   const stretchedGreeting = getBuddyReply("hii", "api-direct", { variant: 0 });
   check("Buddy recognizes hii instead of the generic fallback", /^hello|^hey|^hi!/i.test(stretchedGreeting) && stretchedGreeting !== getBuddyReply("unmatched words", "api-direct", { variant: 0 }));
   const reg = (label) =>
-    call("POST", "/auth/register", { name: `Test ${label}`, email: `${label}${run}@test.com`, password: "secret123" });
+    call("POST", "/auth/register", { name: `Test ${label}`, email: `${label}${run}@test.com`, password: "Test-Password-42!" }, null,
+      ["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname) ? { "X-Forwarded-For": `2001:db8:${createHash("sha256").update(label + run).digest("hex").slice(0, 4)}::1` } : {});
 
   const ra = await reg("a");
   const rb = await reg("b");
@@ -60,7 +61,7 @@ async function main() {
   check("bad password returns 401",
     (await call("POST", "/auth/login", { email: `a${run}@test.com`, password: "wrong" })).status === 401);
   check("login returns 200",
-    (await call("POST", "/auth/login", { email: `a${run}@test.com`, password: "secret123" })).status === 200);
+    (await call("POST", "/auth/login", { email: `a${run}@test.com`, password: "Test-Password-42!" })).status === 200);
   check("/auth/me returns the user", (await call("GET", "/auth/me", null, tokenA)).data.user?._id === idA);
   check("users route requires auth", (await call("GET", "/users")).status === 401);
 
@@ -81,7 +82,7 @@ async function main() {
   const earlyC = await connect(tokenC);
   const strangers = [];
   earlyC.on("user:status", (event) => strangers.push(event));
-  const strangerUser = await reg("stranger");
+  const strangerUser = rc;
   const strangerProbe = await connect(strangerUser.data.token);
   strangerProbe.disconnect();
   await sleep(150);
@@ -233,9 +234,8 @@ async function main() {
   const otherTabB = await connect(tokenB);
   const readUpdate = waitFor(sockA, "message:read:update");
   const tabReadUpdate = waitFor(otherTabB, "message:read:update");
-  const readAck = await emitAck(sockB, "message:read", {
-    conversationId: convId, userId: idA, at: "2099-01-01T00:00:00Z",
-  });
+  check("unknown read payload fields are rejected", !(await emitAck(sockB, "message:read", { conversationId: convId, userId: idA, at: "2099-01-01T00:00:00Z" })).success);
+  const readAck = await emitAck(sockB, "message:read", { conversationId: convId });
   const readEvent = await readUpdate;
   check("read update goes to the other participant with server identity and time",
     readAck.success && readEvent.conversationId === convId && readEvent.userId === idB &&
@@ -513,11 +513,82 @@ async function main() {
   for (let i = 0; i < 20; i++) { await sleep(100); newSeen = (await call("GET", "/auth/me", null, tokenB)).data.user.lastSeenAt; if (newSeen && newSeen !== previousSeen) break; }
   check("last-seen timestamp persists after the final socket disconnects", newSeen && new Date(newSeen) > new Date(previousSeen || 0));
 
-  const limited = await reg("limited");
+  const limited = rd;
   for (let i = 0; i < 30; i++) await sign({}, limited.data.token);
   check("upload signing is limited to thirty attempts per ten minutes", (await sign({}, limited.data.token)).status === 429);
   for (let i = 0; i < 20; i++) await call("POST", "/friends/requests", { userId: idA }, limited.data.token);
   check("friend requests are rate-limited per user", (await call("POST", "/friends/requests", { userId: idA }, limited.data.token)).status === 429);
+
+  const health = await fetch(`${API}/health`);
+  check("Helmet sets nosniff and no-referrer and removes x-powered-by", health.headers.get("x-content-type-options") === "nosniff" && health.headers.get("referrer-policy") === "no-referrer" && !health.headers.has("x-powered-by"));
+  check("JSON requests over 100kb are rejected", (await call("POST", "/auth/login", { email: "x".repeat(110000), password: "Oversized-request" })).status === 413);
+  check("JWT lasts twenty-four hours and includes a version", jwt.decode(tokenA).exp - jwt.decode(tokenA).iat === 86400 && Number.isInteger(jwt.decode(tokenA).tokenVersion));
+  const loginIp = { "X-Forwarded-For": `2001:db8:ffff:${createHash("sha256").update(String(run)).digest("hex").slice(0, 4)}::1` };
+  let lastLogin;
+  for (let i = 0; i < 11; i++) lastLogin = await call("POST", "/auth/login", { email: `rate-${run}@example.com`, password: "Incorrect-Password-42!" }, null, loginIp);
+  check("login limit returns 429 after ten attempts", lastLogin.status === 429);
+  const flood = await connect(tokenA);
+  try {
+    const responses = await Promise.all(Array.from({ length: 25 }, (_, index) => emitAck(flood, "message:send", { conversationId: "invalid", content: `flood ${index}` })));
+    check("socket send flood receives Slow down", responses.some(response => response.message === "Slow down"));
+  } finally { flood.disconnect(); }
+  const devices = [];
+  try {
+    const attempts = await Promise.allSettled(Array.from({ length: 12 }, () => connect(rd.data.token)));
+    devices.push(...attempts.filter(result => result.status === "fulfilled").map(result => result.value));
+    check("concurrent handshakes never exceed ten sockets", devices.length === 10 && attempts.filter(result => result.status === "rejected").length === 2);
+    let capped = false; try { const extra = await connect(rd.data.token); extra.disconnect(); } catch (error) { capped = error.message === "Too many active devices"; }
+    check("eleventh active socket is refused", capped);
+  } finally { for (const device of devices) device.disconnect(); }
+  if (["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname)) {
+    const mongoose = (await import("mongoose")).default;
+    await mongoose.connect(process.env.MONGO_URI);
+    const db = mongoose.connection.db;
+    const fixtureMessage = new mongoose.Types.ObjectId(), fixtureUser = new mongoose.Types.ObjectId();
+    try {
+      const raw = await db.collection("messages").findOne({ _id: new mongoose.Types.ObjectId(baseFeature._id) });
+      const rawUser = await db.collection("users").findOne({ _id: new mongoose.Types.ObjectId(idA) });
+      check("native collection stores encrypted message text and About", raw.content.startsWith("v1:") && raw.content !== "Edited feature [literal]" && rawUser.about.startsWith("v1:"));
+      const profiles = (await call("GET", "/conversations", null, tokenA)).data.conversations.flatMap(conversation => conversation.participants);
+      check("populated conversation profiles decrypt About", profiles.some(user => String(user._id) === String(idA) && user.about === "Local integration profile"));
+      const literal = await emitAck(sockA, "message:send", { conversationId: otherConversation.data.conversation._id, content: raw.content, tempId: "ciphertext-literal" });
+      check("client ciphertext cannot become a decryption oracle", literal.success && literal.message.content === raw.content);
+      check("serialisation decrypts protected text", (await call("GET", `/conversations/${convId}/messages?around=${baseFeature._id}`, null, tokenA)).data.messages.some(message => message.content === "Edited feature [literal]"));
+      const captionUpload = await sign({ conversationId: otherConversation.data.conversation._id, size: png.length }); await put(captionUpload.data, png);
+      const captionMessage = await emitAck(sockA, "message:send", { conversationId: otherConversation.data.conversation._id, caption: "Encrypted caption fixture", attachments: [{ key: captionUpload.data.key }], tempId: "encrypted-caption" });
+      const rawCaption = await db.collection("messages").findOne({ _id: new mongoose.Types.ObjectId(captionMessage.message._id) });
+      check("native collection stores encrypted captions", rawCaption.caption.startsWith("v1:") && captionMessage.message.caption === "Encrypted caption fixture");
+      check("new password hashes use bcrypt cost twelve", rawUser.password.startsWith("$2b$12$") || rawUser.password.startsWith("$2a$12$"));
+      if (process.env.MESSAGE_ENC_KEY) {
+        await db.collection("messages").insertOne({ _id: fixtureMessage, conversation: new mongoose.Types.ObjectId(), sender: new mongoose.Types.ObjectId(idA), type: "text", content: "Migration plaintext fixture", caption: "Migration caption fixture", createdAt: new Date() });
+        await db.collection("users").insertOne({ _id: fixtureUser, email: `migration-${run}@example.invalid`, isBot: true, about: "Migration about fixture" });
+        const { migrateEncryption } = await import("./migrate-encryption.mjs");
+        const scope = { apply: true, messageFilter: { _id: fixtureMessage }, userFilter: { _id: fixtureUser } };
+        const first = await migrateEncryption(db, scope), saved = await db.collection("messages").findOne({ _id: fixtureMessage });
+        const second = await migrateEncryption(db, scope), repeated = await db.collection("messages").findOne({ _id: fixtureMessage });
+        check("migration encrypts plaintext and is idempotent", first.changed === 2 && second.changed === 0 && saved.content.startsWith("v1:") && saved.content === repeated.content);
+        const { encrypt } = await import("../src/security/encryption.js");
+        const fixtures = Array.from({ length: 501 }, (_, index) => ({ _id: new mongoose.Types.ObjectId(), conversation: new mongoose.Types.ObjectId(otherConversation.data.conversation._id), sender: new mongoose.Types.ObjectId(idA), content: encrypt(index === 0 ? "outside-search-window" : index === 500 ? "inside-search-window" : "window filler"), caption: "", type: "text", createdAt: new Date(Date.now() - 501 + index), hiddenFor: [], expireAt: null, hasMedia: false }));
+        await db.collection("messages").insertMany(fixtures);
+        try {
+          check("encrypted search excludes matches outside the last 500 messages", (await call("GET", `/conversations/${otherConversation.data.conversation._id}/messages?q=outside-search-window`, null, tokenA)).data.messages.length === 0);
+          check("encrypted search finds decrypted text within its window", (await call("GET", `/conversations/${otherConversation.data.conversation._id}/messages?q=inside-search-window`, null, tokenA)).data.messages.length === 1);
+        } finally { await db.collection("messages").deleteMany({ _id: { $in: fixtures.map(row => row._id) } }); }
+      } else process.stdout.write("SKIP - migration integration requires the matching MESSAGE_ENC_KEY in the test process\n");
+    } finally { await db.collection("messages").deleteOne({ _id: fixtureMessage }); await db.collection("users").deleteOne({ _id: fixtureUser }); await mongoose.disconnect(); }
+  } else process.stdout.write("SKIP - native collection and migration checks are local-only\n");
+  const revokedSocket = await connect(tokenA);
+  const revokedDisconnect = waitFor(revokedSocket, "disconnect");
+  check("logout-all succeeds", (await call("POST", "/auth/logout-all", {}, tokenA)).status === 200);
+  check("logout-all disconnects connected devices", (await revokedDisconnect) === "io server disconnect");
+  check("logout-all invalidates the old REST token", (await call("GET", "/auth/me", null, tokenA)).status === 401);
+  let oldRejected = false; try { const old = await connect(tokenA); old.disconnect(); } catch { oldRejected = true; }
+  check("logout-all invalidates the old socket token", oldRejected);
+  check("password change requires the current password", (await call("POST", "/auth/change-password", { currentPassword: "Wrong-Password-1!", newPassword: "Updated-Test-Password-42!" }, tokenC)).status === 400);
+  check("password change rejects common passwords", (await call("POST", "/auth/change-password", { currentPassword: "Test-Password-42!", newPassword: "password123" }, tokenC)).status === 400);
+  check("password change succeeds", (await call("POST", "/auth/change-password", { currentPassword: "Test-Password-42!", newPassword: "Updated-Test-Password-42!" }, tokenC)).status === 200);
+  check("password change revokes previous tokens", (await call("GET", "/auth/me", null, tokenC)).status === 401);
+  check("updated password can log in", (await call("POST", "/auth/login", { email: `c${run}@test.com`, password: "Updated-Test-Password-42!" })).status === 200);
 
   sockA.disconnect();
   sockC.disconnect();

@@ -16,6 +16,8 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: MESSAGE_ENC_KEY
+        sync: false
       - key: CLIENT_URL
         sync: false
       - key: STORAGE_DRIVER

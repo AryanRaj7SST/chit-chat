@@ -8,6 +8,10 @@ import HttpError from "../utils/HttpError.js";
 
 export const updateProfile = asyncHandler(async (req, res) => {
   const patch = {}, id = String(req.user._id), storage = getStorage();
+  if (req.body?.settings?.removePhotoLocation !== undefined) {
+    if (typeof req.body.settings.removePhotoLocation !== "boolean") throw new HttpError(400, "Invalid photo privacy preference");
+    patch["settings.removePhotoLocation"] = req.body.settings.removePhotoLocation;
+  }
   if (req.body?.name !== undefined) {
     const name = cleanMessageContent(req.body.name);
     if (name.length < 2 || name.length > 50) throw new HttpError(400, "Name must be 2–50 characters");

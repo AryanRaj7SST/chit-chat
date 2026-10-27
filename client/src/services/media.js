@@ -1,5 +1,6 @@
 import axios from "axios";
 import api from "./api";
+import { stripJpegExif } from "../utils/jpegPrivacy";
 
 const cache = new Map();
 export const clearMediaCache = () => cache.clear();
@@ -20,7 +21,7 @@ export function sniffImage(bytes) {
   return null;
 }
 export const allowedImages = "image/jpeg,image/png,image/webp,image/gif";
-export async function prepareImage(file, { maxWidth = 480, maxHeight = Infinity } = {}) {
+export async function prepareImage(file, { maxWidth = 480, maxHeight = Infinity, removeLocation = true } = {}) {
   if (file.size > 25 * 1024 * 1024) throw new Error("Photos must be 25 MB or smaller.");
   const mime = sniffImage(new Uint8Array(await file.slice(0, 32).arrayBuffer()));
   if (!mime) throw new Error("Choose a JPEG, PNG, WebP, or GIF with valid image bytes. SVG and HEIC are not supported.");
@@ -38,7 +39,13 @@ export async function prepareImage(file, { maxWidth = 480, maxHeight = Infinity 
     if (thumb?.size > 400 * 1024) thumb = null;
   } catch { /* A valid original can be sent even if thumbnail decoding fails. */ }
   finally { bitmap?.close(); }
-  return { file, mime, thumb, width, height, thumbWidth, thumbHeight };
+  let metadataWarning;
+  if (removeLocation && mime === "image/jpeg") {
+    const result = stripJpegExif(new Uint8Array(await file.arrayBuffer()));
+    if (!result.valid) metadataWarning = "Location metadata removal was skipped; this photo may still contain location data.";
+    if (result.removed) file = new File([result.bytes], file.name, { type: mime, lastModified: file.lastModified });
+  }
+  return { file, mime, thumb, width, height, thumbWidth, thumbHeight, metadataWarning };
 }
 export async function uploadImage(blob, mime, conversationId, kind, dimensions, signal, progress) {
   const { data } = await api.post("/uploads/sign", { conversationId, kind, mime, size: blob.size, ...dimensions }, { signal });

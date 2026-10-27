@@ -77,7 +77,12 @@ export const getMessages = asyncHandler(async (req, res) => {
   const searching = typeof req.query.q === "string" && req.query.q.trim();
   const limit = searching ? 30 : Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
   const filter = { conversation: req.conversation._id, hiddenFor: { $ne: req.user._id }, $and: [notExpired()] };
-  if (searching) { const regex = new RegExp(escapeRegex(req.query.q.trim().slice(0, 100)), "i"); filter.deletedAt = null; filter.$or = [{ content: regex }, { caption: regex }]; }
+  if (searching) {
+    const regex = new RegExp(escapeRegex(req.query.q.trim().slice(0, 100)), "i");
+    const window = await Message.find({ ...filter, deletedAt: null }).sort({ createdAt: -1, _id: -1 }).limit(500);
+    const matches = window.filter(message => regex.test(message.content || "") || regex.test(message.caption || "")).slice(0, 30).reverse();
+    return res.json({ success: true, messages: await messageViews(matches, req.user._id), hasMore: false, searchWindow: 500, lastReadAt: await visibleReadPositions(req.conversation, req.user._id) });
+  }
   if (req.query.around) {
     if (!mongoose.isValidObjectId(req.query.around)) throw new HttpError(400, "Invalid message id");
     const target = await Message.findOne({ ...filter, _id: req.query.around });
