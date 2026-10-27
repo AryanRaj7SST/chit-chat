@@ -5,6 +5,7 @@ import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import { useAuth } from "../hooks/useAuth";
 import { useSocket } from "../hooks/useSocket";
+import { useVisualViewport } from "../hooks/useVisualViewport";
 import api, { getErrorMessage } from "../services/api";
 import { getFriends, getFriendRequests, sendFriendRequest, acceptFriendRequest, declineFriendRequest, cancelFriendRequest, removeFriend } from "../services/friends";
 
@@ -17,6 +18,7 @@ const bump = (list, msg) => {
 };
 
 export default function ChatPage() {
+  useVisualViewport();
   const { user, logout } = useAuth();
   const { socket, connected, onlineIds } = useSocket();
 

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { splitMessageContent } from "../src/utils/messageContent.js";
+import { characterCount, isLargeEmoji, limitCharacters } from "../src/utils/characters.js";
+
+test("emoji limits count graphemes and only one to three emoji enlarge", () => {
+  assert.equal(characterCount("👨‍👩‍👧‍👦👍🏽🇮🇳"), 3);
+  assert.equal(limitCharacters("👍🏽😀x", 2), "👍🏽😀");
+  for (const text of ["😀", "👍🏽🇮🇳", "👨‍👩‍👧‍👦😀🎉", "1️⃣"]) assert.equal(isLargeEmoji(text), true);
+  for (const text of ["hello😀", "😀😀😀😀", "", "42", "😀!"]) assert.equal(isLargeEmoji(text), false);
+});
 
 test("fenced code stays separate from surrounding text without HTML interpretation", () => {
   assert.deepEqual(splitMessageContent('Before\n```js\nconst tag = "<img onerror=evil()>";\n```\nAfter'), [

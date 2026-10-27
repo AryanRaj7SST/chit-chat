@@ -79,6 +79,11 @@ See [Render's Express guide](https://render.com/docs/deploy-node-express-app).
 | `CLIENT_URL` | Initially `http://localhost:5173`; replace with the actual Vercel origin after step 3 |
 | `NODE_ENV` | `production` |
 | `NODE_VERSION` | `24` |
+| `STORAGE_DRIVER` | `r2` (required in production) |
+| `R2_ACCOUNT_ID` | Your Cloudflare account ID |
+| `R2_ACCESS_KEY_ID` | Private bucket-scoped object read/write key |
+| `R2_SECRET_ACCESS_KEY` | Private secret returned with that key |
+| `R2_BUCKET` | Name of your PRIVATE R2 bucket |
 
 Use at least 32 random bytes for the JWT signing secret. Do not reuse an example
 value. The Blueprint sets the last two values automatically. Render supplies
@@ -197,9 +202,76 @@ Send the actual Render and Vercel URLs after deployment. The next verification
 will target those URLs and report the real command output. No hosted deployment
 or production test has been performed during this preparation phase.
 
-## Preparation verification evidence
+## Private image storage added in Phase 5.6
 
-The following checks were run locally against the updated code on 2026-10-27:
+Configure this before deploying Phase 5.6: a production server refuses the local
+driver, including when STORAGE_DRIVER is unset and would default to local.
+No R2 bucket or credentials were created or exercised during local testing.
+
+1. In the Cloudflare dashboard, open **R2 Object Storage** and choose
+   **Create bucket**. Choose a bucket name and create it. Leave public access,
+   r2.dev access, and public custom domains disabled.
+2. Open **Manage R2 API Tokens** and create an account API token with
+   **Object Read & Write** permission restricted to this bucket. Copy the
+   access key ID and secret directly into Render environment settings; do not
+   paste them into source files, terminal commands, screenshots, or Vercel.
+   Also copy the account ID shown with the S3 endpoint.
+3. On Render, open the backend's **Environment** page. Set STORAGE_DRIVER=r2,
+   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET.
+   The root render.yaml lists these settings. PUBLIC_API_URL is only needed
+   for the local driver and is not required for R2.
+4. Open the bucket's **Settings → CORS policy → Add**. Apply this policy with
+   your actual frontend origin replacing the example. Add a localhost origin
+   only if you intentionally test this R2 bucket from your development client:
+
+   ```json
+   [{
+     "AllowedOrigins": ["https://your-client.vercel.app"],
+     "AllowedMethods": ["GET", "HEAD", "PUT"],
+     "AllowedHeaders": ["Content-Type", "Content-Length", "If-None-Match"],
+     "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+     "MaxAgeSeconds": 3600
+   }]
+   ```
+
+5. Keep Render's CLIENT_URL configured separately. It governs the application
+   API and Socket.IO, while the bucket CORS policy governs direct image PUT/GET.
+   Redeploy Render after saving its environment settings, then rebuild/redeploy
+   Vercel for the new client. Never add R2 secrets to any VITE_ variable.
+6. With two accepted-friend accounts, send a photo and download its original.
+   Compare hashes, refresh history, test an expired link, and confirm an outsider
+   cannot request its media URL. Try GIF/PNG transparency and a rotated camera
+   JPEG. An unsigned bucket URL must remain inaccessible.
+
+The client uploads exact original bytes to ten-minute signed PUT URLs and uses
+separate JPEG thumbnails. If-None-Match prevents overwriting an existing object;
+R2 documents atomic create-once conditional writes in its
+[S3 compatibility reference](https://developers.cloudflare.com/r2/api/s3/api/).
+Signed download URLs last 60 seconds; clients cache them in memory for 50 seconds.
+Treat all signed links as temporary bearer capabilities and avoid logging them.
+See Cloudflare's [CORS guide](https://developers.cloudflare.com/r2/buckets/cors/)
+and [token guide](https://developers.cloudflare.com/r2/api/tokens/).
+
+The local driver uses server/.uploads, which must remain untracked, and is not a
+durable production option. Upload metadata is persisted in MongoDB. Signing
+expires after an hour for an unclaimed upload; signed PUT capabilities expire
+after ten minutes. Canceling a request cannot guarantee that an already in-flight
+R2 write is canceled. Unused/abandoned original or thumbnail objects are not
+automatically garbage-collected in this phase. Periodically reconcile expired
+Upload records against BOTH attachments.key and attachments.thumbKey in Message
+before deleting unused objects. Do not apply a blanket age-based deletion policy
+to the c/ prefix: that would also delete saved conversation photos. The sign
+limiter is per server process and resets on restart.
+
+HEIC is deliberately refused because the allowed storage formats are JPEG,
+PNG, WebP, and GIF. A supported original is still sent if its optional thumbnail
+cannot be decoded/generated. Camera captures are new JPEG files at the browser's
+reported capture resolution and quality 0.95; originals chosen from disk/native
+camera are not recompressed by the app.
+
+## Preparation verification evidence (Phase 6)
+
+The following checks were run locally against the Phase 6 code on 2026-10-27:
 
 - Client `npm run build`: `✓ built in 1.14s`.
 - Client `npm test`: `ℹ tests 8`, `ℹ pass 8`, `ℹ fail 0`.

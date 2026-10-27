@@ -23,8 +23,10 @@ The repository includes deployment configuration and a recording kit. Hosted dep
 - **Persistent unread counts:** computed on the server from per-participant read positions.
 - **Read receipts:** single check after a send acknowledgement; double check when the other participant's read position reaches that message.
 - **Theme system:** light/dark toggle on auth pages and in the sidebar; first visit follows the system preference. Semantic CSS tokens, pre-React initialization, and localStorage persistence use Tailwind v4's class-based theme support. See the [theme audit and screenshots](docs/THEME_AUDIT.md).
+- **Photos:** up to ten JPEG/PNG/WebP/GIF files per message, 25 MiB each, uploaded with original bytes intact. Separate thumbnails, captions, progress/cancel/retry, paste/drop, a zoomable viewer, and original downloads use private storage and signed URLs. Buddy refuses photos.
+- **Camera and emoji:** explicit camera capture with cleanup and native-camera fallback; a lazy-loaded themed emoji picker and larger one-to-three-emoji bubbles. Camera automation uses simulated hardware; real devices and production R2 still require manual checks.
 
-There are no group chats, calls, uploads, end-to-end encryption, push notifications, or emoji picker. The UI loads the latest 50 messages; the API supports paging, but the UI has no older-history pagination controls. Presence is held in one backend process's memory; multi-instance coordination is not implemented.
+There are no group chats, calls, end-to-end encryption, or push notifications. Uploads are limited to supported image formats; HEIC, SVG, HTML, and other attachments are refused. The UI loads the latest 50 messages; the API supports paging, but the UI has no older-history pagination controls. Presence is held in one backend process's memory; multi-instance coordination is not implemented.
 
 ## Tech stack
 
@@ -123,8 +125,19 @@ All values below are **examples/placeholders**, not working credentials.
 | `JWT_SECRET` | `<your-long-random-private-secret>` | Shared signing/verification secret for REST and Socket.IO |
 | `CLIENT_URL` | `http://localhost:5173` | Allowed frontend origins; accepts a comma-separated list |
 | `NODE_VERSION` | `24` | Render runtime setting, already specified in render.yaml |
+| `STORAGE_DRIVER` | `local` | Development default; production must use `r2` |
+| `PUBLIC_API_URL` | `http://localhost:5000` | Origin for local signed media links, matching the backend port |
+| `R2_ACCOUNT_ID` | `<account-id>` | R2 endpoint account when using `r2` |
+| `R2_ACCESS_KEY_ID` | `<private-access-key-id>` | Bucket-scoped R2 credential; server only |
+| `R2_SECRET_ACCESS_KEY` | `<private-secret-access-key>` | Bucket-scoped R2 credential; server only |
+| `R2_BUCKET` | `<private-bucket-name>` | Private bucket with public access disabled |
 
 `MONGO_URI` and `JWT_SECRET` are required at startup. For multiple clients, `CLIENT_URL` can be `http://localhost:5173,https://your-client.vercel.app`. Whitespace and trailing slashes are removed; use exact origins without paths. HTTP and Socket.IO polling share this CORS list. JWT and membership checks apply independently of CORS.
+
+For local development, `server/.uploads` stores images and stays ignored by Git.
+If you change `PORT`, update `PUBLIC_API_URL` too. Never use this ephemeral local
+driver on Render; production startup rejects it. Configure the private R2 bucket
+and its separate browser CORS policy using [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ### Client: client/.env
 
@@ -257,6 +270,24 @@ Paths include `/api`. Protected requests require `Authorization: Bearer <token>`
 
 Registration requires a 2–50 character name, valid email, and password of at least six characters. Public profiles include _id, name, email, createdAt and isBot, never password hashes. Search returns a different privacy-preserving shape; relationship is none, friends, request_sent or request_received. The request limiter is in memory per backend process and resets on restart.
 
+Image routes (no existing routes were renamed):
+
+| Method | Path | Access | Contract |
+| --- | --- | --- | --- |
+| POST | `/api/uploads/sign` | JWT + current friend + conversation membership | `{ conversationId, kind: "original" or "thumb", mime, size, width?, height? }` returns `{ key, upload: { url, method, headers } }`; no Buddy uploads; 30 attempts/user/10 minutes |
+| PUT | `/api/uploads/local/:token` | Owning user's JWT + signed upload token | Development-only exact raw bytes; immutable create-once write |
+| GET | `/api/uploads/local/:token` | Signed short-lived download capability | Development-only image response; not a public file directory |
+| GET | `/api/media?key=...` | JWT + membership | Returns `{ url }`, valid 60 seconds, only for validated message attachments |
+
+Image `message:send` uses `{ conversationId, tempId?, caption?, attachments:
+[{ key, thumbKey?, width?, height? }] }`. Text keeps its existing payload.
+Saved `message:new`, ack, history, and lastMessage objects additionally include
+`type`, `caption`, and `attachments` (with trusted mime/size); old messages default
+to text. Originals are not processed server-side. The server checks signed
+ownership, key scope, object size/MIME, and magic bytes before persisting. The
+sidebar displays Photo or Photo: caption. Text and caption limits count Unicode
+grapheme clusters, with additional byte bounds against oversized payloads.
+
 ## Socket.IO contract
 
 Connect to `VITE_SOCKET_URL` with `auth: { token }`. The sender ID comes from the authenticated socket, not submitted content. The names and shapes below match `server/src/socket/index.js`.
@@ -291,7 +322,7 @@ Every script below is defined in that directory's `package.json`.
 | --- | --- | --- |
 | `server` | `npm run dev` | Watch-mode backend |
 | `server` | `npm start` | Backend without watch mode |
-| `server` | `npm test` | CORS/origin and Buddy rule tests; no database needed |
+| `server` | `npm test` | CORS/origin, Buddy, image validation, emoji bounds, and production-storage guard tests; no database needed |
 | `server` | `npm run test:kb` | Knowledge counts, retrieval, commands, bounded sessions, and runnable snippets; no server needed |
 | `server` | `npm run verify` | API/socket integration tests against a running backend |
 | `server` | `npm run seed:demo` | Development-only demo accounts |
@@ -301,6 +332,7 @@ Every script below is defined in that directory's `package.json`.
 | `client` | `npm test` | Message, date/read state, URL, and fenced-code parsing tests |
 | `client` | `npm run lint` | Oxlint; currently reports non-failing React context/effect warnings |
 | `client` | `npm run e2e` | Playwright with two fresh user contexts and an extra tab |
+| `client` | `npm run test:media` | Emoji, touch-emulation, and simulated-camera lifecycle checks |
 
 Install dependencies with `npm ci` in each package. In `client`, install Chromium once:
 

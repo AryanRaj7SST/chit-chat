@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { chromium, expect as playwrightExpect } from "@playwright/test";
 
@@ -122,6 +124,71 @@ try {
     await expect(messages(pageA, text)).toHaveCount(1);
   await expect(messages(pageA, "Hello from A").locator("xpath=ancestor::*[@data-message-id]").getByLabel("Read", { exact: true })).toBeVisible();
   check("reply and reload retain each saved message exactly once");
+
+  const png = Buffer.from(await pageA.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 800;
+    const ctx = canvas.getContext("2d"); ctx.fillStyle = "#6D4AFF"; ctx.fillRect(0, 0, 1200, 800);
+    ctx.fillStyle = "white"; ctx.fillRect(200, 200, 300, 300);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  const photoFile = { name: "original.png", mimeType: "image/png", buffer: png };
+  await pageA.getByLabel("Photo files", { exact: true }).setInputFiles({ name: "fake.png", mimeType: "image/png", buffer: Buffer.from("<html>not a photo</html>") });
+  await expect(pageA.getByRole("alert").filter({ hasText: "valid image bytes" })).toBeVisible();
+  await pageA.getByLabel("Photo files", { exact: true }).setInputFiles({ name: "oversized.png", mimeType: "image/png", buffer: Buffer.alloc(25 * 1024 * 1024 + 1) });
+  await expect(pageA.getByRole("alert").filter({ hasText: "25 MB or smaller" })).toBeVisible();
+  await pageA.evaluate(bytes => {
+    const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "pasted.png", { type: "image/png" }));
+    document.querySelector("textarea").dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+  }, [...png]);
+  await expect(pageA.getByLabel("Photo previews").getByAltText("Selected photo preview")).toHaveCount(1);
+  await pageA.evaluate(bytes => {
+    const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "dropped.png", { type: "image/png" }));
+    document.querySelector("section").dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, [...png]);
+  await expect(pageA.getByLabel("Photo previews").getByAltText("Selected photo preview")).toHaveCount(2);
+  await pageA.getByRole("button", { name: "Remove photo", exact: true }).first().click();
+  await pageA.getByRole("button", { name: "Remove photo", exact: true }).first().click();
+  check("client rejects oversized/fake images and accepts image paste/drop with removable previews");
+  await pageA.getByLabel("Photo files", { exact: true }).setInputFiles([photoFile, { ...photoFile, name: "second.png" }]);
+  await expect(pageA.getByLabel("Photo previews").getByAltText("Selected photo preview")).toHaveCount(2);
+  await pageA.getByLabel("Photo caption").fill("Original-quality browser test");
+  let releaseUpload;
+  const uploadGate = new Promise(resolve => { releaseUpload = resolve; });
+  const holdUpload = async route => { await uploadGate; await route.continue().catch(() => {}); };
+  await pageA.route("**/api/uploads/local/**", holdUpload);
+  await pageA.getByRole("button", { name: "Send message", exact: true }).click();
+  const photoBubble = pageA.locator("[data-message-id]").filter({ hasText: "Original-quality browser test" });
+  await expect(photoBubble.getByRole("progressbar").first()).toBeVisible();
+  await expect(photoBubble.getByLabel("Sent", { exact: true })).toHaveCount(0);
+  await photoBubble.getByRole("button", { name: "Cancel upload", exact: true }).click();
+  await expect(photoBubble.getByRole("button", { name: "Failed to send. Tap to retry" })).toBeVisible();
+  releaseUpload(); await pageA.unroute("**/api/uploads/local/**", holdUpload);
+  await photoBubble.getByRole("button", { name: "Failed to send. Tap to retry" }).click();
+  await expect(photoBubble.getByLabel("Read", { exact: true })).toBeVisible();
+  const receivedPhoto = pageB.locator("[data-message-id]").filter({ hasText: "Original-quality browser test" });
+  await expect(receivedPhoto.getByAltText(`Photo from ${nameA}`)).toHaveCount(2);
+  await expect.poll(() => receivedPhoto.getByAltText(`Photo from ${nameA}`).first().evaluate(el => el.complete && el.naturalWidth > 0)).toBe(true);
+  for (const width of [320, 375, 768, 1024, 1440]) {
+    await pageA.setViewportSize({ width, height: 812 });
+    expect(await pageA.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(pageA.getByRole("button", { name: "Send message", exact: true })).toBeVisible();
+    const button = await pageA.getByRole("button", { name: "Attach photos" }).boundingBox();
+    expect(button.width >= 40 && button.height >= 40).toBe(true);
+  }
+  await receivedPhoto.getByRole("button", { name: `Open photo 1 from ${nameA}`, exact: true }).click();
+  const viewer = pageB.getByRole("dialog", { name: "Photo viewer" });
+  await expect(viewer.getByAltText(`Photo from ${nameA}`)).toBeVisible();
+  await viewer.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const downloadEvent = pageB.waitForEvent("download");
+  await viewer.getByRole("button", { name: "Download", exact: true }).click();
+  const downloaded = await downloadEvent;
+  expect(createHash("sha256").update(await readFile(await downloaded.path())).digest("hex")).toBe(createHash("sha256").update(png).digest("hex"));
+  await viewer.getByRole("button", { name: "Next photo" }).click();
+  await expect(viewer.getByText("2 / 2 · Original quality", { exact: true })).toBeVisible();
+  await pageB.keyboard.press("Escape"); await expect(viewer).toHaveCount(0);
+  await pageA.reload(); await openChat(pageA, nameB);
+  await expect(pageA.locator("[data-message-id]").filter({ hasText: "Original-quality browser test" })).toHaveCount(1);
+  check("multi-photo preview, cancel/retry, live delivery, original SHA-256 download, lightbox, reload and 320/375/768/1024/1440px layout");
 
   await contextA.setOffline(true);
   // Chromium's offline emulation can leave an existing WebSocket alive.
@@ -258,6 +325,8 @@ try {
   await openChat(pageA, "Buddy AI");
   await expect(pageA.getByLabel("Friend options")).toHaveCount(0);
   const botMessages = pageA.locator('[data-message-id]');
+  await expect(botMessages.getByText("Hi! I'm Buddy AI", { exact: false })).toBeVisible();
+  await expect(botMessages).toHaveCount(1);
   const beforeBot = await botMessages.count();
   await send(pageA, "hello Buddy");
   await expect(botMessages).toHaveCount(beforeBot + 2);

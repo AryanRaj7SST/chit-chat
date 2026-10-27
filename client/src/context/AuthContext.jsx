@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useState } from "react";
 import api, { TOKEN_KEY } from "../services/api";
+import { clearMediaCache } from "../services/media";
 
 export const AuthContext = createContext(null);
 
@@ -9,12 +10,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(() => !!localStorage.getItem(TOKEN_KEY));
 
   const logout = useCallback(() => {
+    clearMediaCache();
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
   }, []);
 
   const saveSession = ({ token: newToken, user: newUser }) => {
+    clearMediaCache();
     localStorage.setItem(TOKEN_KEY, newToken);
     setToken(newToken);
     setUser(newUser);

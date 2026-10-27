@@ -1,4 +1,6 @@
 export const MAX_MESSAGE_LENGTH = 2000;
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+export const characterCount = value => Array.from(segmenter.segment(value)).length;
 
 export const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 

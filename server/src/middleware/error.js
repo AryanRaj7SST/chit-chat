@@ -12,6 +12,6 @@ export const errorHandler = (err, req, res, next) => {
   else if (err.name === "CastError") { status = 400; message = "Invalid id"; }
   else if (err.code === 11000) { status = 409; message = "Email is already registered"; }
 
-  if (status >= 500) console.error(err);
+  if (status >= 500) console.error("Request failed", err.name || "Error");
   res.status(status).json({ success: false, message: status >= 500 ? "Server error" : message });
 };

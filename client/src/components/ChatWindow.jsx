@@ -9,6 +9,7 @@ import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import { MessagesSkeleton } from "./Skeletons";
+import { useImageSharing } from "../hooks/useImageSharing";
 
 export default function ChatWindow({ conversation, me, onBack, onMessageSent, onUnfriend, busy }) {
   const { socket, connected, onlineIds } = useSocket();
@@ -143,9 +144,11 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
       toast.error("You are offline. Check your connection and retry.");
       return;
     }
-    socket.timeout(10000).emit("message:send", { conversationId, content, tempId }, (err, res) => {
+    const fields = typeof content === "string" ? { content } : content;
+    socket.timeout(20000).emit("message:send", { conversationId, ...fields, tempId }, (err, res) => {
       if (err || !res?.success) {
         markFailed(tempId);
+        if (!err) imageSharing.invalidate(tempId);
         toast.error(err ? "Sending timed out. Tap to retry." : res.message);
         return;
       }
@@ -154,6 +157,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
         mergeMessages(prev, [{ ...res.message, tempId, status: "sent" }])
       );
       onMessageSent(res.message, conversation);
+      imageSharing.complete(tempId);
     });
   };
 
@@ -176,9 +180,14 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
   };
 
   const handleRetry = (message) => {
+    if (imageSharing.retry(message)) return;
     setMessages((prev) => prev.map((m) => (m.tempId === message.tempId ? { ...m, status: "sending" } : m)));
-    deliver(message.tempId, message.content);
+    deliver(message.tempId, message.type === "image" ? { type: "image", attachments: message.attachments, caption: message.caption } : message.content);
   };
+
+  const imageSharing = useImageSharing({ conversationId, isBot: other.isBot,
+    create: (tempId, fields) => { stopTyping(); setMessages(previous => [...previous, { _id: tempId, tempId, conversation: conversationId, sender: me._id, createdAt: new Date().toISOString(), status: "sending", ...fields }]); },
+    update: (tempId, fields) => setMessages(previous => previous.map(message => message.tempId === tempId ? { ...message, ...fields } : message)), deliver });
 
   // ---------- auto scroll ----------
   useEffect(() => {
@@ -188,7 +197,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
   }, [messages.length, otherTyping, loading]);
 
   return (
-    <section className="panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-border bg-surface md:rounded-2xl">
+    <section onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void imageSharing.addFiles([...event.dataTransfer.files]); } }} className="panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-border bg-surface md:rounded-2xl">
       <header className="flex items-center gap-3 border-b border-border bg-header px-3 py-4 md:px-5">
         <button
           onClick={onBack}
@@ -249,6 +258,8 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
                   message={m}
                   mine={m.sender === me._id}
                   isBot={other.isBot && m.sender !== me._id}
+                  senderName={m.sender === me._id ? me.name : other.name}
+                  onCancelUpload={imageSharing.cancel}
                   read={!!otherReadAt && new Date(otherReadAt) >= new Date(m.createdAt)}
                   onRetry={handleRetry}
                   groupedBefore={sameMessageGroup(messages[index - 1], m)}
@@ -281,7 +292,7 @@ export default function ChatWindow({ conversation, me, onBack, onMessageSent, on
           ))}
         </div>
       )}
-      <MessageInput onSend={handleSend} onTyping={handleTyping} onStopTyping={stopTyping} />
+      <MessageInput onSend={handleSend} onTyping={handleTyping} onStopTyping={stopTyping} images={imageSharing} />
     </section>
   );
 }

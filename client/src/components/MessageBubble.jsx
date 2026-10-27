@@ -2,8 +2,10 @@ import { AlertCircle, Check, CheckCheck, Clock } from "lucide-react";
 import { formatTime } from "../utils/format";
 import toast from "react-hot-toast";
 import { splitMessageContent } from "../utils/messageContent";
+import ImageAttachments from "./ImageAttachments";
+import { isLargeEmoji } from "../utils/characters";
 
-export default function MessageBubble({ message, mine, isBot, read, onRetry, groupedBefore, groupedAfter }) {
+export default function MessageBubble({ message, mine, isBot, senderName, onCancelUpload, read, onRetry, groupedBefore, groupedAfter }) {
   const failed = message.status === "failed";
   const sending = message.status === "sending";
   const copyCode = async (code) => {
@@ -18,15 +20,16 @@ export default function MessageBubble({ message, mine, isBot, read, onRetry, gro
   return (
     <div data-message-id={message._id} data-grouped={groupedBefore ? "true" : "false"} className={`flex ${groupedBefore ? "mt-1" : "mt-3"} ${mine ? "justify-end" : "justify-start"}`}>
       <div
-        className={`min-w-0 max-w-[80%] rounded-2xl px-3.5 py-2 shadow-sm ${isBot ? "md:max-w-[75%]" : "md:max-w-[65%]"} ${
+        className={`min-w-0 max-w-[80%] ${message.type === "image" ? "w-[420px]" : ""} rounded-2xl px-3.5 py-2 shadow-sm ${isBot ? "md:max-w-[75%]" : "md:max-w-[65%]"} ${
           mine
             ? "sent-bubble rounded-br-md text-on-primary"
             : "received-bubble rounded-bl-md border border-border bg-received text-text"
         } ${groupedBefore ? (mine ? "rounded-tr-md" : "rounded-tl-md") : ""} ${groupedAfter ? (mine ? "rounded-br-md" : "rounded-bl-md") : ""}`}
       >
         <div className="min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]">
-          {splitMessageContent(message.content).map((part, index) => part.type === "text" ? (
-            <p key={index} className="whitespace-pre-wrap break-words">{part.text}</p>
+          {message.type === "image" && <ImageAttachments message={message} sender={senderName} onCancel={onCancelUpload} />}
+          {splitMessageContent(message.content || "").map((part, index) => part.type === "text" ? (
+            <p key={index} className={`whitespace-pre-wrap break-words ${isLargeEmoji(message.content) ? "text-4xl leading-relaxed" : ""}`}>{part.text}</p>
           ) : (
             <div key={index} className="my-2 min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2 text-text">
               <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-1 text-xs">

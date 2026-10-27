@@ -4,7 +4,9 @@ import mongoose from "mongoose";
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import { getUserFromToken } from "../utils/token.js";
-import { cleanMessageContent, MAX_MESSAGE_LENGTH } from "../utils/validators.js";
+import { characterCount, cleanMessageContent, MAX_MESSAGE_LENGTH } from "../utils/validators.js";
+import { requireImageConversation, validateAttachments } from "../controllers/uploadController.js";
+import Upload from "../models/Upload.js";
 import { canMessage, getFriendIds } from "../utils/friendship.js";
 import { ensureBuddy, getBuddyReply } from "../bot/buddy.js";
 
@@ -99,10 +101,13 @@ export function initSocket(httpServer) {
     socket.on("message:send", async (payload, ack) => {
       const reply = typeof ack === "function" ? ack : () => {};
       try {
-        const content = cleanMessageContent(payload?.content);
-        if (!content) return reply({ success: false, message: "Message cannot be empty" });
-        if (content.length > MAX_MESSAGE_LENGTH)
+        const image = payload?.type === "image" || (Array.isArray(payload?.attachments) && payload.attachments.length > 0);
+        const content = image ? "" : cleanMessageContent(payload?.content);
+        const caption = image ? cleanMessageContent(payload?.caption) : "";
+        if (!image && !content) return reply({ success: false, message: "Message cannot be empty" });
+        if (characterCount(content) > MAX_MESSAGE_LENGTH || Buffer.byteLength(content) > 100000)
           return reply({ success: false, message: `Message is too long (max ${MAX_MESSAGE_LENGTH})` });
+        if (characterCount(caption) > 1000 || Buffer.byteLength(caption) > 50000) return reply({ success: false, message: "Caption is too long (max 1000)" });
 
         const conversation = await getConversationForUser(payload?.conversationId, userId);
         if (!conversation) return reply({ success: false, message: "Conversation not found or access denied" });
@@ -114,12 +119,17 @@ export function initSocket(httpServer) {
         if (tempId !== undefined && (!tempId || tempId.length > 100))
           return reply({ success: false, message: "Invalid message tempId" });
         const identity = { conversation: conversation._id, sender: userId, tempId };
+        const existing = tempId ? await Message.findOne(identity) : null;
+        if (image) await requireImageConversation(conversation._id, userId);
+        const attachments = image && !existing ? await validateAttachments(payload.attachments, String(conversation._id), userId) : [];
+        const fields = { content, type: image ? "image" : "text", caption, attachments };
         let message;
         let created = true;
-        if (tempId) {
+        if (existing) { message = existing; created = false; }
+        else if (tempId) {
           try {
             const result = await Message.findOneAndUpdate(
-              identity, { $setOnInsert: { ...identity, content, createdAt: new Date() } },
+              identity, { $setOnInsert: { ...identity, ...fields, createdAt: new Date() } },
               { upsert: true, returnDocument: "after", runValidators: true, timestamps: false, includeResultMetadata: true }
             );
             message = result.value;
@@ -130,8 +140,9 @@ export function initSocket(httpServer) {
             created = false;
           }
         } else {
-          message = await Message.create({ conversation: conversation._id, sender: userId, content });
+          message = await Message.create({ conversation: conversation._id, sender: userId, ...fields });
         }
+        if (message.type === "image") await Upload.updateMany({ user: userId, key: { $in: message.attachments.flatMap(item => [item.key, item.thumbKey].filter(Boolean)) } }, { $set: { claim: String(message._id) } });
         // An old retry must not move the preview back to an older message.
         await Conversation.updateOne(
           { _id: conversation._id, $or: [{ lastMessage: null }, { lastMessage: { $lt: message._id } }] },
@@ -148,8 +159,8 @@ export function initSocket(httpServer) {
             queueBuddyReply(conversation._id, userId, otherId, content);
         } catch { console.error("Buddy scheduling failed"); }
       } catch (err) {
-        console.error("message:send failed:", err.message);
-        reply({ success: false, message: "Failed to send message" });
+        if (!err.status) console.error("message:send failed");
+        reply({ success: false, message: err.status && err.status < 500 ? err.message : "Failed to send message" });
       }
     });
 

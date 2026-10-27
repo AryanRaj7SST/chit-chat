@@ -9,11 +9,13 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "e2e": "node scripts/e2e-test.mjs",
+    "test:media": "node scripts/media-ui-test.mjs",
     "test": "node --test scripts/messages-test.mjs scripts/environment-test.mjs scripts/message-content-test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "axios": "^1.20.0",
+    "emoji-picker-react": "^5.1.4",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

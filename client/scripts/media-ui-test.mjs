@@ -1,0 +1,87 @@
+import { randomUUID } from "node:crypto";
+import { chromium, expect as pwExpect } from "@playwright/test";
+
+const base = process.env.E2E_BASE_URL || "http://localhost:5173";
+const expect = pwExpect.configure({ timeout: 15000 });
+const browser = await chromium.launch({ args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
+const context = await browser.newContext({ permissions: ["camera"] });
+await context.addInitScript(() => {
+  window.__cameraStreams = [];
+  const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia = async constraints => {
+    const stream = await gum(constraints); window.__cameraStreams.push(stream); return stream;
+  };
+});
+const page = await context.newPage();
+const failures = [];
+page.on("pageerror", error => failures.push(error.message));
+const pass = label => console.log(`PASS - ${label}`);
+try {
+  await page.goto(`${base}/register`);
+  await page.getByLabel("Name", { exact: true }).fill("Media UI Test");
+  await page.getByLabel("Email", { exact: true }).fill(`media-${randomUUID()}@example.com`);
+  await page.getByLabel("Password", { exact: true }).fill(`Test-${randomUUID()}`);
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
+  await page.locator("aside").getByRole("button").filter({ hasText: "Buddy AI" }).click();
+  const message = page.getByLabel("Message", { exact: true });
+  await message.fill("AB"); await message.press("ArrowLeft");
+  await page.getByRole("button", { name: "Choose emoji" }).click();
+  const picker = page.getByRole("dialog", { name: "Emoji picker" });
+  await expect(picker).toBeVisible();
+  await picker.getByRole("gridcell", { name: "grinning face", exact: true }).or(picker.getByRole("button", { name: "grinning face", exact: true })).first().click();
+  await expect(message).toHaveValue("A😀B");
+  await page.getByRole("button", { name: "Choose emoji" }).click(); await page.keyboard.press("Escape"); await expect(picker).toHaveCount(0);
+  await page.getByRole("button", { name: "Choose emoji" }).click(); await page.locator("section header").click(); await expect(picker).toHaveCount(0);
+  await message.fill("😀👍🏽👨‍👩‍👧‍👦"); await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const emojis = page.locator("[data-message-id]").getByText("😀👍🏽👨‍👩‍👧‍👦", { exact: true });
+  expect(await emojis.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(30);
+  pass("lazy emoji picker inserts at the cursor, closes on Escape/outside click, and enlarges three emoji graphemes");
+  const openCamera = async () => {
+    await page.getByRole("button", { name: "Attach photos", exact: true }).click();
+    await page.getByRole("button", { name: "Camera", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Camera", exact: true })).toBeVisible();
+  };
+  const allStopped = () => page.evaluate(() => window.__cameraStreams.length > 0 && window.__cameraStreams.every(stream => stream.getTracks().every(track => track.readyState === "ended")));
+  await openCamera();
+  await expect.poll(() => page.locator("video").evaluate(el => el.videoWidth > 0 && el.videoHeight > 0)).toBe(true);
+  await page.getByRole("button", { name: "Capture photo", exact: true }).click();
+  await expect(page.getByAltText("Captured photo preview")).toBeVisible(); await expect.poll(allStopped).toBe(true);
+  await page.getByRole("button", { name: "Retake", exact: true }).click();
+  await expect.poll(() => page.locator("video").evaluate(el => el.videoWidth > 0)).toBe(true);
+  await page.getByRole("button", { name: "Switch camera", exact: true }).click();
+  await expect.poll(() => page.locator("video").evaluate(el => el.videoWidth > 0)).toBe(true);
+  await page.getByRole("button", { name: "Close camera", exact: true }).click(); await expect.poll(allStopped).toBe(true);
+  await openCamera(); await expect.poll(() => page.locator("video").evaluate(el => el.videoWidth > 0)).toBe(true);
+  await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await expect(page.getByRole("dialog", { name: "Camera", exact: true })).toHaveCount(0); await expect.poll(allStopped).toBe(true);
+  await page.evaluate(() => { delete document.hidden; navigator.mediaDevices.getUserMedia = async () => { throw new DOMException("Denied", "NotAllowedError"); }; });
+  await openCamera(); await expect(page.getByText("Camera permission was denied.", { exact: false })).toBeVisible();
+  await page.keyboard.press("Escape");
+  pass("simulated camera capture/retake/switch, track cleanup on close and tab hide, and denied permission feedback (no real camera used)");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6gAAAABJRU5ErkJggg==", "base64");
+  await page.getByLabel("Photo files", { exact: true }).setInputFiles({ name: "photo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByRole("alert").filter({ hasText: "Buddy can't see images yet" })).toBeVisible();
+  const touch = await browser.newContext({ isMobile: true, hasTouch: true, viewport: { width: 375, height: 812 }, storageState: await context.storageState() });
+  const mobile = await touch.newPage(); await mobile.goto(base);
+  await mobile.locator("aside").getByRole("button").filter({ hasText: "Buddy AI" }).click();
+  await mobile.getByRole("button", { name: "Choose emoji" }).click();
+  await expect(mobile.getByRole("dialog", { name: "Emoji picker" })).toBeVisible();
+  expect(await mobile.evaluate(() => document.activeElement?.tagName)).not.toBe("INPUT");
+  const cell = mobile.getByRole("gridcell", { name: "grinning face", exact: true }).or(mobile.getByRole("button", { name: "grinning face", exact: true })).first();
+  await expect(cell).toBeVisible();
+  const size = await cell.boundingBox(); expect(size.width >= 40 && size.height >= 40).toBe(true);
+  await mobile.locator("section header").click();
+  const native = mobile.waitForEvent("filechooser");
+  await mobile.getByRole("button", { name: "Attach photos" }).click();
+  await mobile.getByRole("button", { name: "Camera", exact: true }).click();
+  const chooser = await native; expect(await chooser.element().getAttribute("capture")).toBe("environment");
+  await mobile.setViewportSize({ width: 320, height: 480 }); await mobile.getByLabel("Message", { exact: true }).focus();
+  expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const composer = await mobile.getByRole("button", { name: "Send message", exact: true }).boundingBox();
+  expect(composer.y + composer.height <= 480).toBe(true);
+  await touch.close();
+  pass("touch emulation keeps emoji search unfocused, uses native camera input, and keeps 40px targets/composer within a 320px shortened viewport");
+  expect(failures).toEqual([]);
+  console.log("All media UI checks passed");
+} catch (error) { console.error("FAIL -", error.message); process.exitCode = 1; }
+finally { await browser.close(); }

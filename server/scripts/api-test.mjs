@@ -2,6 +2,7 @@ import "dotenv/config";
 import jwt from "jsonwebtoken";
 import { io } from "socket.io-client";
 import { getBuddyReply } from "../src/bot/buddy.js";
+import { createHash } from "node:crypto";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").trim().replace(/\/+$/, "");
 const baseUrl = new URL(BASE);
@@ -269,6 +270,7 @@ async function main() {
   check("unfriended conversation disappears", !(await call("GET", "/conversations", null, tokenA)).data.conversations.some((c) => c._id === convId));
   const deniedSend = await emitAck(sockA, "message:send", { conversationId: convId, content: "not allowed", tempId: "denied" });
   check("membership alone no longer permits sending", !deniedSend.success && deniedSend.message === "You are no longer friends");
+  check("a former friend cannot sign an upload", (await call("POST", "/uploads/sign", { conversationId: convId, kind: "original", mime: "image/png", size: 10 }, tokenA)).status === 403);
   check("old history remains membership-readable", (await call("GET", `/conversations/${convId}/messages`, null, tokenA)).status === 200);
   let typingAfterRemoval = false;
   returningB.on("typing:update", () => { typingAfterRemoval = true; });
@@ -329,7 +331,57 @@ async function main() {
   const revealed = await askBuddy("answer", "answer");
   check("Buddy reveals the pending quiz answer", revealed.length > 20 && !revealed.startsWith("Type quiz me"));
 
+  const sign = (changes = {}, token = tokenA) => call("POST", "/uploads/sign", { conversationId: convId, kind: "original", mime: "image/png", size: 68, ...changes }, token);
+  check("upload signing requires authentication", (await sign({}, null)).status === 401);
+  check("upload signing rejects SVG", (await sign({ mime: "image/svg+xml" })).status === 400);
+  check("upload signing rejects oversized originals", (await sign({ size: 25 * 1024 * 1024 + 1 })).status === 400);
+  check("upload signing rejects oversized thumbnails", (await sign({ kind: "thumb", size: 400 * 1024 + 1 })).status === 400);
+  check("upload signing rejects non-members", (await sign({}, tokenC)).status === 403);
+  const botUpload = await sign({ conversationId: buddyConversation._id });
+  check("Buddy refuses image uploads politely", botUpload.status === 400 && botUpload.data.message === "Buddy can't see images yet");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6gAAAABJRU5ErkJggg==", "base64");
+  const original = await sign({ size: png.length, width: 1, height: 1, filename: "ignored-dangerous.svg" });
+  check("upload uses a server-generated PNG key", original.status === 200 && /^c\/[a-f0-9]{24}\/[a-f0-9-]{36}\.png$/.test(original.data.key));
+  const put = async (signed, bytes, token = tokenA) => {
+    const local = new URL(signed.upload.url).pathname.startsWith("/api/uploads/local/");
+    return fetch(signed.upload.url, { method: signed.upload.method, headers: { ...signed.upload.headers, ...(local ? { Authorization: `Bearer ${token}` } : {}) }, body: bytes });
+  };
+  const localDriver = new URL(original.data.upload.url).pathname.startsWith("/api/uploads/local/");
+  if (localDriver) check("local PUT also requires the owning user's JWT", (await put(original.data, png, tokenC)).status === 403);
+  check("original bytes upload successfully", [200, 201, 204].includes((await put(original.data, png)).status));
+  check("upload links cannot overwrite an existing object", (await put(original.data, png)).status === 412);
+  const imageAck = await emitAck(sockA, "message:send", { conversationId: convId, tempId: "photo-roundtrip", caption: "Original test photo", attachments: [{ key: original.data.key, width: 1, height: 1 }] });
+  check("image persists with trusted metadata and empty text", imageAck.success && imageAck.message.type === "image" && imageAck.message.content === "" && imageAck.message.attachments[0].size === png.length && imageAck.message.attachments[0].mime === "image/png");
+  const againPhoto = await emitAck(sockA, "message:send", { conversationId: convId, tempId: "photo-roundtrip", attachments: [{ key: original.data.key }] });
+  check("image retries reuse the acknowledged message", againPhoto.success && againPhoto.message._id === imageAck.message._id);
+  const download = await call("GET", `/media?key=${encodeURIComponent(original.data.key)}`, null, tokenB);
+  check("member receives a signed original URL", download.status === 200 && !!download.data.url);
+  const downloaded = Buffer.from(await (await fetch(download.data.url)).arrayBuffer());
+  const sha = data => createHash("sha256").update(data).digest("hex");
+  check("original upload/download is byte-for-byte identical (SHA-256)", sha(png) === sha(downloaded));
+  check("media denies non-members", (await call("GET", `/media?key=${encodeURIComponent(original.data.key)}`, null, tokenC)).status === 403);
+  check("media rejects path traversal", (await call("GET", "/media?key=../../.env", null, tokenA)).status === 400);
+  const wrong = Buffer.from("<html>not an image</html>");
+  const fake = await sign({ size: wrong.length });
+  await put(fake.data, wrong);
+  const fakeAck = await emitAck(sockA, "message:send", { conversationId: convId, tempId: "fake-photo", attachments: [{ key: fake.data.key }] });
+  check("wrong magic bytes behind a PNG extension are rejected", !fakeAck.success);
+  if (localDriver && ["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname)) {
+    const { local } = await import("../src/storage/local.js");
+    check("invalid image object is removed from local storage", await local.head(fake.data.key) === null);
+  } else {
+    check("invalid image is not exposed by media API", (await call("GET", `/media?key=${encodeURIComponent(fake.data.key)}`, null, tokenA)).status === 404);
+    process.stdout.write("SKIP - physical object deletion requires storage access on the target host\n");
+  }
+  const otherConversation = await call("POST", "/conversations", { userId: idC }, tokenA);
+  const foreign = await sign({ conversationId: otherConversation.data.conversation._id, size: png.length });
+  check("keys from another conversation cannot be attached", !(await emitAck(sockA, "message:send", { conversationId: convId, tempId: "foreign-photo", attachments: [{ key: foreign.data.key }] })).success);
+  check("image sends to Buddy are refused even without signing", (await emitAck(sockA, "message:send", { conversationId: buddyConversation._id, type: "image", attachments: [{ key: original.data.key }] })).message === "Buddy can't see images yet");
+  check("text limit counts emoji graphemes instead of UTF-16 units", (await emitAck(sockA, "message:send", { conversationId: convId, content: "😀".repeat(2000), tempId: "emoji-limit" })).success);
+
   const limited = await reg("limited");
+  for (let i = 0; i < 30; i++) await sign({}, limited.data.token);
+  check("upload signing is limited to thirty attempts per ten minutes", (await sign({}, limited.data.token)).status === 429);
   for (let i = 0; i < 20; i++) await call("POST", "/friends/requests", { userId: idA }, limited.data.token);
   check("friend requests are rate-limited per user", (await call("POST", "/friends/requests", { userId: idA }, limited.data.token)).status === 429);
 

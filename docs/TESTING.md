@@ -298,3 +298,95 @@ documents supported weak keys;
 [React StrictMode](https://react.dev/reference/react/StrictMode) documents extra
 development checks; [Web Vitals](https://web.dev/articles/vitals) describes
 LCP/INP/CLS. The explanations in the knowledge files are original wording.
+
+## Images, camera, and emoji (Phase 5.6)
+
+For local checks, start the backend with STORAGE_DRIVER=local and
+PUBLIC_API_URL matching its origin (for the test runs: http://localhost:5001),
+and the client with its API/socket URLs pointing to that backend. Existing
+server/.env secrets remain private and untracked. Local files go only into
+gitignored server/.uploads. Production refuses this driver.
+
+Automated commands:
+
+- Server `npm test`: includes image magic-byte checks, path rejection,
+  conditional image/text schema validation for documents AND atomic upserts,
+  2,000-emoji boundaries, and production-local-storage rejection.
+- Server `npm run verify`: includes SVG/oversize/thumb-size/non-member/Buddy
+  signing rejection, a former friend's signing denial, owning-user JWT checks
+  on local PUT, immutable uploads, trusted saved metadata, image retry identity,
+  byte-for-byte SHA-256 download comparison, outsider media denial, traversal
+  rejection, wrong magic bytes with a fake extension and physical local deletion,
+  cross-conversation key rejection, direct Buddy image rejection, emoji limits,
+  and the 30-attempt upload sign limiter. Remote runs report a SKIP for physical
+  deletion inspection when the target storage is unavailable to the test runner.
+- Client `npm test`: grapheme counting and one-to-three-emoji rendering decisions
+  supplement message reconciliation, URL, date/read, and code-fence tests.
+- Client `npm run e2e`: two separate user contexts exercise removable multi-photo
+  previews, per-file progress, cancel/retry, live reception, thumbnail loading,
+  original download SHA-256 equality, viewer navigation/zoom/Escape, persistence,
+  and overflow/composer checks at 320/375/768/1024/1440px. The existing text,
+  friendship, typing, presence, receipts, Buddy and theme regressions remain.
+- Client `npm run test:media`: runs Chromium with fake camera hardware. It
+  exercises real browser getUserMedia against that simulated device, capture,
+  retake, facing-mode switch, track cleanup on close/capture/tab-hide, mocked
+  permission denial, and Buddy's image refusal. It also tests lazy emoji cursor
+  insertion, Escape/outside close, large emoji bubbles, touch-mode no-autofocus,
+  40px targets, native capture-input preference, and a shortened 320px viewport.
+  These are not real-device or real-camera results.
+- `npm run build` produces separate emoji-picker chunks. The picker is imported
+  through React.lazy rather than included eagerly in the main application path.
+
+Original File objects are sent unchanged; only separate 480px-wide-or-smaller
+JPEG previews use canvas quality 0.8. Camera capture creates a new JPEG at the
+video's reported dimensions and quality 0.95. Preview decoding uses EXIF-aware
+createImageBitmap. A thumbnail failure leaves a supported original sendable and
+uses a file-style chat placeholder; click it to open/download the original.
+GIF originals remain animated and PNG originals retain transparency. HEIC is
+not in the requested server allowlist and is refused, rather than silently
+converted and labeled as an untouched original.
+
+Manual checklist (not verified automatically):
+
+- [ ] Configure a private R2 bucket, scoped server credentials, and its separate
+  CORS policy using [DEPLOYMENT.md](DEPLOYMENT.md). Verify PUT/GET in the hosted
+  browser, including If-None-Match, and confirm unsigned URLs fail. No real R2
+  request or deployment was performed during this phase.
+- [ ] Compare original/download SHA-256 for a large JPEG, transparent PNG,
+  animated GIF, and WebP. Check rotated EXIF photos on Safari/iOS and Android.
+  Check the fallback when thumbnail decoding is unavailable.
+- [ ] On actual camera hardware: deny permission, allow it, switch front/back,
+  capture, retake, send, close, navigate away, and background the tab. Verify the
+  OS camera indicator goes out. Check missing-device and insecure-context errors.
+- [ ] On a real phone, use the native capture picker, check its full-quality
+  output, and confirm pinch zoom/panning and viewer controls are usable.
+- [ ] Open the actual mobile keyboard in portrait/landscape. Check composer,
+  caption, preview tray, safe-area/notch insets, emoji popup, focus, and dismissal.
+  Resizing a browser viewport does not simulate every mobile keyboard behavior.
+- [ ] Try ten photos, remove some, paste/drop more, cancel during a large upload,
+  go offline, reconnect, retry, and verify a send is never marked sent before ack.
+- [ ] Let a signed image URL expire, revisit a lazy-loaded thumbnail, retry a
+  failed photo, and test Download after expiry. Confirm logout clears URL cache.
+- [ ] Review abandoned upload storage usage. Canceled/expired unused uploads need
+  operational cleanup after checking both original AND thumbnail message refs;
+  automatic orphan collection is outside this phase. Never delete all c/ objects
+  by age because saved images share that prefix.
+
+Real R2, real cameras, Safari/Firefox, physical-device keyboards, EXIF fixtures,
+and long-running storage cleanup remain unverified. The per-process upload
+limiter and learning/presence state are not coordinated across server instances.
+
+Recorded local command output for this phase:
+
+- Server verification: `All checks passed`, including
+  `PASS - original upload/download is byte-for-byte identical (SHA-256)` and
+  `PASS - invalid image object is removed from local storage`.
+- Server unit tests: `tests 6`, `pass 6`, `fail 0`; knowledge tests:
+  `Total: 242 entries. All knowledge-base checks passed`.
+- Client unit tests: `tests 11`, `pass 11`, `fail 0`.
+- Client production build: `✓ built in 1.07s`.
+- Browser regression suite: `All browser checks passed`.
+- Camera/emoji/touch suite: `All media UI checks passed` (simulated hardware).
+- Lint exited 0 with React context-export, effect-state, ref-cleanup, and compiler
+  optimization/purity warnings. Camera/photo effects add synchronization warnings;
+  these are not presented as a warning-free lint run.
