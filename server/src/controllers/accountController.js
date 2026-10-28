@@ -20,7 +20,7 @@ export const exportAccount = asyncHandler(async (req, res) => {
   const messages = await Message.find({ sender: req.user._id }).sort({ createdAt: 1 });
   const media = item => ({ mime: item.mime, size: item.size, width: item.width, height: item.height, url: null, expired: true });
   const profile = { ...user, avatar: user.avatar?.key ? media(user.avatar) : null };
-  res.set("Cache-Control", "no-store").set("Content-Disposition", 'attachment; filename="mern-chat-export.json"').json({ profile, exportedAt: new Date(), messages: messages.map(message => ({ _id: message._id, conversation: message.conversation, content: message.content, caption: message.caption, createdAt: message.createdAt, deletedAt: message.deletedAt, attachments: message.attachments.map(media) })) });
+  res.set("Cache-Control", "no-store").set("Content-Disposition", 'attachment; filename="chit-chat-export.json"').json({ profile, exportedAt: new Date(), messages: messages.map(message => ({ _id: message._id, conversation: message.conversation, content: message.content, caption: message.caption, createdAt: message.createdAt, deletedAt: message.deletedAt, attachments: message.attachments.map(media) })) });
 });
 export const deleteAccount = asyncHandler(async (req, res) => {
   const id = String(req.user._id), password = req.body?.password;

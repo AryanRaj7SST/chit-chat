@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { LogOut, MessageCircle, Search, X } from "lucide-react";
+import { LogOut, Search, X } from "lucide-react";
+import BrandIcon from "./BrandIcon";
 import Avatar from "./Avatar";
 import { ListSkeleton } from "./Skeletons";
 import { formatListTime, getOther } from "../utils/format";
@@ -40,7 +41,7 @@ export default function Sidebar({ className, me, conversations, activeId, onSele
   return (
     <aside className={`panel min-w-0 shrink-0 flex-col overflow-hidden border border-border bg-surface md:rounded-2xl   ${className}`}>
       <div className="space-y-4 bg-header p-4 pb-0">
-        <div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center brand-gradient rounded-xl text-on-primary"><MessageCircle className="h-5 w-5" /></div><span className="text-lg font-semibold text-text">MERN Chat</span></div>
+        <div className="flex items-center gap-2"><BrandIcon className="h-10 w-10" /><span className="text-lg font-semibold text-text">chit-chat</span></div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input aria-label="Search people" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search people by name or email" className="w-full rounded-full border border-border bg-input py-2.5 pl-9 pr-8 text-sm text-text outline-none transition-colors duration-150 focus:border-primary focus:ring-[3px] focus:ring-primary/20" />

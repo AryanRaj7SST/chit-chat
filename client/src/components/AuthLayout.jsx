@@ -1,4 +1,4 @@
-import { MessageCircle } from "lucide-react";
+import BrandIcon from "./BrandIcon";
 import ThemeToggle from "./ThemeToggle";
 
 export function Field({ label, ...props }) {
@@ -20,9 +20,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
       <div className="absolute right-4 top-4 z-10 rounded-full border border-border bg-surface"><ThemeToggle /></div>
       <div className="panel relative w-full max-w-md rounded-2xl border border-border bg-surface p-6 sm:p-8">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="brand-gradient mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-on-primary shadow-md">
-            <MessageCircle className="h-6 w-6" />
-          </div>
+          <BrandIcon className="mb-2 h-16 w-16" /><p className="mb-3 text-sm font-semibold text-primary-ink">chit-chat</p>
           <h1 className="text-2xl font-semibold text-text">{title}</h1>
           <p className="mt-1 text-sm text-muted">{subtitle}</p>
         </div>

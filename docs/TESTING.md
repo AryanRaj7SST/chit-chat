@@ -622,3 +622,9 @@ Final command output excerpts (2026-10-27):
   `Removed 4 disposable security test accounts and their data`.
 
 No deployment, full existing-data migration, or real R2 verification is claimed.
+
+## chit-chat branding
+
+The app title, auth/sidebar branding, notifications and export filename use chit-chat. The SVG speech-bubble logo follows the accent, with a different gradient in light/dark mode. The tab icon follows explicit app settings and system theme changes, with a static SVG fallback.
+
+Local Chromium output: `PASS - chit-chat title/logo, theme/accent favicon updates, light/dark layouts at 320/375/768/1280px`. API verification reported `All checks passed`; the client production build reported `? built in 1.25s`. Hosted favicon caching and Safari/Firefox remain manual checks.

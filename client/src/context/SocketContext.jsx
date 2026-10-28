@@ -38,7 +38,7 @@ export function SocketProvider({ children }) {
         }
         if (userRef.current?.settings?.browserNotifications !== false && document.hidden && "Notification" in window && Notification.permission === "granted") {
           const hide = userRef.current?.settings?.hidePreviews !== false;
-          new Notification("MERN Chat", { body: hide ? "You have a new message." : message.type === "image" ? "Photo" : message.content.slice(0, 120), tag: message.conversation });
+          new Notification("chit-chat", { body: hide ? "You have a new message." : message.type === "image" ? "Photo" : message.content.slice(0, 120), tag: message.conversation });
         }
       } catch { /* Unsupported/denied notifications never interrupt messaging. */ }
     };

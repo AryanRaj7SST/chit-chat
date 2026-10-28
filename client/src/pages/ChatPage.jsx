@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageCircle, WifiOff } from "lucide-react";
+import { WifiOff } from "lucide-react";
+import BrandIcon from "../components/BrandIcon";
 import toast from "react-hot-toast";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
@@ -253,7 +254,7 @@ export default function ChatPage() {
         ) : (
           <div className="panel hidden min-w-0 flex-1 flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 text-center md:flex">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary-ink">
-              <MessageCircle className="h-8 w-8" />
+              <BrandIcon className="h-12 w-12" />
             </div>
             <h2 className="text-lg font-semibold text-text">Select a conversation</h2>
             <p className="mt-1 max-w-xs text-sm text-muted">

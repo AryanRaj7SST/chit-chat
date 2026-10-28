@@ -1,4 +1,4 @@
-# MERN Chat demonstration: 4 minutes 35 seconds
+# chit-chat demonstration: 4 minutes 35 seconds
 
 Read the quoted lines naturally. Bracketed directions are actions, not narration.
 Pause briefly for each visible result; do not fill loading time with claims that
@@ -13,7 +13,7 @@ never run the development seed in production. Substitute their names below.
 
 [Show the chat app title and login page. Keep the address bar visible.]
 
-“This is MERN Chat, a private messaging app for conversations between two people.
+“This is chit-chat, a private messaging app for conversations between two people.
 The frontend uses React, Vite, and Tailwind CSS. The backend uses Node and
 Express, with MongoDB and Mongoose for storage. Socket.IO carries the live chat
 events. I’ll show the account flow, a real conversation, and what happens when
@@ -108,7 +108,7 @@ and confirms the saved message to the sender.”
 
 [Return to the two chat windows with the saved exchange visible.]
 
-“That’s MERN Chat: two independent sessions, live private messaging, saved
+“That’s chit-chat: two independent sessions, live private messaging, saved
 history, and a layout that adapts to smaller screens. Thanks for watching.”
 
 If recording on localhost, say so in the introduction. Only call it a deployed

@@ -1,4 +1,4 @@
-# MERN Chat architecture
+# chit-chat architecture
 
 This diagram reflects the implemented MERN chat architecture. A separate project
 brief diagram is not checked into this repository, so an exact visual match to

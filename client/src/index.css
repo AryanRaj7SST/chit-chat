@@ -8,6 +8,8 @@
 :root[data-accent="rose"] { --primary: #be123c; --primary-hover: #9f1239; }
 :root[data-accent="orange"] { --primary: #c2410c; --primary-hover: #9a3412; }
 :root { --chat-font-size: 16px; }
+:root { --brand-top: color-mix(in srgb, var(--primary) 75%, white); }
+:root.dark { --brand-top: color-mix(in srgb, var(--primary) 90%, white); }
 :root[data-font-size="small"] { --chat-font-size: 14px; }
 :root[data-font-size="large"] { --chat-font-size: 18px; }
 html { font-size: var(--chat-font-size); }

@@ -28,7 +28,7 @@ export default function SettingsPanel({ onClose, onEditProfile }) {
   const save = async () => { setBusy(true); setError(""); try { await updateProfile({ settings: draft }); onClose(); } catch (error) { setError(getErrorMessage(error)); } finally { setBusy(false); } };
   const exportData = async () => {
     setBusy(true); setError("");
-    try { const { data } = await api.get("/users/me/export"); const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "mern-chat-export.json"; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    try { const { data } = await api.get("/users/me/export"); const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "chit-chat-export.json"; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
     catch (error) { setError(getErrorMessage(error)); } finally { setBusy(false); }
   };
   return createPortal(<div className="settings-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}><section ref={panel} role="dialog" aria-modal="true" aria-label="Settings" className="settings-panel">
